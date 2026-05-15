@@ -1,0 +1,26 @@
+{include file="$HOME/header.html"}
+<div class="admin">
+    <div class="panel admin-panel">
+        <div class="panel-head"><strong>Edit: {$name}</strong>
+            <a href="{U('Nginx/index')}" style="float:right">&laquo; back</a>
+        </div>
+        <div class="padding">
+            <form id="edit-form" class="form-x">
+                <input type="hidden" name="name" value="{$name}">
+                <textarea name="content" rows="28" style="width:100%;font-family:monospace;font-size:13px">{$content|escape}</textarea>
+                <div style="margin-top:10px">
+                    <button type="submit" class="button bg-main">Save &amp; reload</button>
+                    <em style="color:#888">nginx -t runs automatically; rollback on failure.</em>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+$('#edit-form').on('submit', function (e) {
+    e.preventDefault();
+    ajaxPost('{U("/Nginx/save")}', $(this).serialize());
+});
+</script>
+{include file="$HOME/footer.html"}

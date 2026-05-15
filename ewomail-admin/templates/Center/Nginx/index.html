@@ -1,0 +1,55 @@
+{include file="$HOME/header.html"}
+<div class="admin">
+    <div class="panel admin-panel">
+        <div class="panel-head">
+            <strong>Nginx vhosts (/etc/nginx/sites-available)</strong>
+            <span style="float:right">
+                <a href="javascript:;" id="btn-test" class="button button-small bg-blue">nginx -t</a>
+                <a href="javascript:;" id="btn-reload" class="button button-small bg-main">Reload</a>
+            </span>
+        </div>
+        <div class="padding">
+            {if !$test_ok}
+            <div class="alert alert-red" style="margin-bottom:10px;">
+                <strong>nginx -t failed:</strong><br>
+                <pre style="white-space:pre-wrap;margin:0">{$test_out|escape}</pre>
+            </div>
+            {/if}
+            <table class="table table-hover">
+                <thead><tr><th>Site</th><th width="120">Status</th><th width="240">Action</th></tr></thead>
+                <tbody>
+                {foreach from=$sites item=s}
+                    <tr>
+                        <td>{$s.name}</td>
+                        <td>{if $s.enabled}<span style="color:#2e7d32">enabled</span>{else}<span style="color:#888">disabled</span>{/if}</td>
+                        <td>
+                            <a class="button button-little border-blue" href="{U('Nginx/edit',"name={$s.name}")}">Edit</a>
+                            {if $s.enabled}
+                              <a class="button button-little border-yellow btn-toggle" href="javascript:;" data-act="disable" data-name="{$s.name}">Disable</a>
+                            {else}
+                              <a class="button button-little border-green btn-toggle"  href="javascript:;" data-act="enable"  data-name="{$s.name}">Enable</a>
+                            {/if}
+                        </td>
+                    </tr>
+                {foreachelse}
+                    <tr><td colspan="3" align="center">No vhost files.</td></tr>
+                {/foreach}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+$(function () {
+    function p(action, data, reload) {
+        ajaxPost('{U("/Nginx/")}' + action, data, function (j) { if (j.status && reload !== false) location.reload(); });
+    }
+    $('#btn-test').on('click',   function () { p('test', {}, false); });
+    $('#btn-reload').on('click', function () { p('reload', {}, false); });
+    $(document).on('click', '.btn-toggle', function () {
+        p($(this).data('act'), { name: $(this).data('name') });
+    });
+});
+</script>
+{include file="$HOME/footer.html"}

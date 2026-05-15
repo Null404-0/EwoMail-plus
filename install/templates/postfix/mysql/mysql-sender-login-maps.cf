@@ -1,0 +1,5 @@
+user     = ewomail
+password = @@EWO_MYSQL_EWOMAIL_PWD@@
+hosts    = 127.0.0.1
+dbname   = ewomail
+query    = SELECT email FROM i_users WHERE email='%s' AND active=1

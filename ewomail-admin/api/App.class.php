@@ -73,6 +73,12 @@ class App
         //版本号
         self::$version = @file_get_contents(PATH.'/core/version');
 
+        // Base URL for static asset references inside templates. Empty when
+        // the admin panel is mounted at site root (legacy deployment shape);
+        // /<random-path> when mounted under a random URL prefix.
+        $base = trim((string)C('admin_path'), '/');
+        $BASE = $base === '' ? '' : '/'.$base;
+
         //将一些常用变量注入到模板变量
         $arr = [
             'L'=>$L,//当前加载的语言包变量
@@ -82,8 +88,9 @@ class App
             'WEB_TITLE'=>SystemConfig::get('title'),//网站标题
             'WEB_COPYRIGHT'=>SystemConfig::get('copyright'),//网站授权信息
             'WEB_ICP'=>SystemConfig::get('icp'),//网站icp信息
+            'BASE'=>$BASE,//静态资源前缀（部署在子路径下时为/<admin_path>）
         ];
-        
+
         Tp::assign($arr);
     }
     
@@ -95,7 +102,7 @@ class App
         $loginInfo = Session::get('loginInfo');
         //跳过Index控制器的登陆检查
         if(MODULE!='Index' && !$loginInfo){
-            header("Location:/Index/login");
+            header("Location:".U('/Index/login'));
             exit;
         }
         Admin::$aid = $loginInfo['aid'];

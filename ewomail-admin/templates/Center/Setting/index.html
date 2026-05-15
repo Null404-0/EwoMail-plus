@@ -1,0 +1,62 @@
+{include file="$HOME/header.html"}
+<div class="admin">
+    <div class="panel admin-panel">
+        <div class="panel-head"><strong>Public addresses</strong></div>
+        <div class="padding">
+            <table class="table">
+                <tr><td width="160">Mail host</td><td>{$mail_host}</td></tr>
+                <tr><td>Public IP</td><td>{$public_ip}</td></tr>
+                <tr><td>Webmail</td><td><a href="https://{$mail_host}/" target="_blank">https://{$mail_host}/</a></td></tr>
+                <tr><td>Admin URL</td><td>https://{$mail_host}/<strong>{$admin_path}</strong>/ &nbsp;
+                    <a href="javascript:;" id="rotate-admin" class="button button-little border-yellow">Rotate</a></td></tr>
+                <tr><td>Adminer URL</td><td>
+                    https://{$mail_host}/<strong>{$db_path}</strong>/ &nbsp;
+                    <a href="javascript:;" id="rotate-db" class="button button-little border-yellow">Rotate</a>
+                    <label style="margin-left:14px">
+                        <input type="checkbox" id="toggle-db" {if $db_enabled}checked{/if}> enabled
+                    </label>
+                </td></tr>
+            </table>
+            <p style="color:#888">Rotating an URL path takes effect immediately; bookmark the new URL or you will lose access.</p>
+        </div>
+    </div>
+
+    <div class="panel admin-panel" style="margin-top:14px">
+        <div class="panel-head"><strong>Change admin password</strong></div>
+        <div class="padding">
+            <form id="pwd-form" class="form-x" style="max-width:480px">
+                <div class="form-group"><label>Current password</label>
+                    <input type="password" name="current" class="input" required></div>
+                <div class="form-group"><label>New password (≥ 12 chars)</label>
+                    <input type="password" name="new" class="input" required></div>
+                <div class="form-group"><label>Confirm new password</label>
+                    <input type="password" name="confirm" class="input" required></div>
+                <button type="submit" class="button bg-main">Update</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+$(function () {
+    function p(action, data, cb) { ajaxPost('{U("/Setting/")}' + action, data || {}, cb); }
+
+    $('#rotate-admin').on('click', function () {
+        if (!confirm('Rotate the admin path? The browser will be redirected to the new URL after a moment.')) return;
+        p('rotate-admin-path', {}, function (j) {
+            if (j.status && j.data && j.data.path) {
+                setTimeout(function () { location.href = '/' + j.data.path + '/'; }, 1500);
+            }
+        });
+    });
+    $('#rotate-db').on('click', function () {
+        if (!confirm('Rotate the db path?')) return;
+        p('rotate-db-path', {}, function () { setTimeout(function () { location.reload(); }, 1500); });
+    });
+    $('#toggle-db').on('change', function () {
+        p('toggle-db', { state: this.checked ? 'on' : 'off' });
+    });
+    $('#pwd-form').on('submit', function (e) { e.preventDefault(); p('change-password', $(this).serialize()); });
+});
+</script>
+{include file="$HOME/footer.html"}

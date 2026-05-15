@@ -1,0 +1,34 @@
+[DEFAULT]
+banaction = firewallcmd-rich-rules[actiontype=<multiport>]
+banaction_allports = firewallcmd-rich-rules[actiontype=<allports>]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+backend  = systemd
+
+[sshd]
+enabled = true
+mode    = aggressive
+
+[postfix-sasl]
+enabled  = true
+filter   = postfix[mode=auth]
+maxretry = 5
+journalmatch = _SYSTEMD_UNIT=postfix@-.service
+
+[postfix-ewomail]
+enabled  = true
+filter   = postfix-ewomail
+maxretry = 5
+
+[dovecot]
+enabled  = true
+maxretry = 5
+
+[nginx-http-auth]
+enabled  = true
+maxretry = 5
+
+[nginx-bad-request]
+enabled  = true
+maxretry = 10

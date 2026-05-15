@@ -1,0 +1,59 @@
+{include file="$HOME/header.html"}
+<div class="admin">
+    <div class="panel admin-panel">
+        <div class="panel-head"><strong>Current certificate</strong></div>
+        <div class="padding">
+            {if $live}
+                <p><strong>File:</strong> {$live.path}</p>
+                <p><strong>Last update:</strong> {$live.mtime}</p>
+                <pre style="background:#f5f5f5;padding:8px">{$live.info|escape}</pre>
+            {else}
+                <em>No cert deployed yet.</em>
+            {/if}
+        </div>
+    </div>
+
+    <div class="panel admin-panel" style="margin-top:14px">
+        <div class="panel-head"><strong>Issue / renew via acme.sh (Let's Encrypt)</strong></div>
+        <div class="padding">
+            <form id="issue-form" class="form-x" style="margin-bottom:10px">
+                <div class="form-group" style="margin:0;display:inline-block;">
+                    <label>FQDN:</label>
+                    <input type="text" name="domain" class="input" placeholder="{$mail_host}" value="{$mail_host}" style="width:280px" required>
+                    <button type="submit" class="button bg-main">Issue</button>
+                    <em style="color:#888">Requires DNS A record to point here and port 80 reachable.</em>
+                </div>
+            </form>
+
+            <table class="table table-hover">
+                <thead><tr><th>Domain</th><th>CA</th><th>Created</th><th>Next renew</th><th width="200">Action</th></tr></thead>
+                <tbody>
+                {foreach from=$rows item=r}
+                    <tr>
+                        <td>{$r.domain}</td><td>{$r.ca}</td><td>{$r.created}</td><td>{$r.renew}</td>
+                        <td>
+                            <a href="javascript:;" class="button button-little border-blue   btn-renew"   data-d="{$r.domain}">Renew</a>
+                            <a href="javascript:;" class="button button-little border-green  btn-install" data-d="{$r.domain}">Install</a>
+                        </td>
+                    </tr>
+                {foreachelse}
+                    <tr><td colspan="5" align="center">No certificates yet.</td></tr>
+                {/foreach}
+                </tbody>
+            </table>
+            <p style="margin-top:8px;color:#888">acme.sh auto-renews every 60 days via cron. Use "Install" after an out-of-band renewal to push the new cert into Postfix/Dovecot/Nginx.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+$(function () {
+    function p(action, data, reload) {
+        ajaxPost('{U("/Cert/")}' + action, data, function (j) { if (j.status && reload !== false) location.reload(); });
+    }
+    $('#issue-form').on('submit', function (e) { e.preventDefault(); p('issue', $(this).serialize(), false); });
+    $(document).on('click', '.btn-renew',   function () { p('renew',   { domain: $(this).data('d') }, false); });
+    $(document).on('click', '.btn-install', function () { p('install', { domain: $(this).data('d') }); });
+});
+</script>
+{include file="$HOME/footer.html"}

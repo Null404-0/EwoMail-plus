@@ -1,0 +1,20 @@
+<?php
+return [
+    'dbhost'        => '127.0.0.1',
+    'dbuser'        => 'ewomail',
+    'dbpw'          => '@@EWO_MYSQL_EWOMAIL_PWD@@',
+    'dbname'        => 'ewomail',
+    'dbcharset'     => 'utf8mb4',
+    'dbprefix'      => 'i_',
+    'code_key'      => '@@EWO_CODE_KEY@@',
+    'url'           => 'https://@@EWO_MAIL_HOST@@/@@EWO_ADMIN_PATH@@',
+    'webmail_url'   => 'https://@@EWO_MAIL_HOST@@',
+    'maildir'       => '/ewomail/mail',
+    'home_default'  => 'Center',
+    'home_allow'    => ['Center', 'Api'],
+    'module_default' => 'Index',
+    'action_default' => 'index',
+    'prefix'        => 'ewomail_',
+    'admin_path'    => '@@EWO_ADMIN_PATH@@',
+    'mail_host'     => '@@EWO_MAIL_HOST@@',
+];

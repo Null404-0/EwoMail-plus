@@ -1,0 +1,85 @@
+# EwoMail-plus / Postfix main configuration (Debian).
+
+# Hostname & domains
+myhostname            = @@EWO_MAIL_HOST@@
+mydomain              = @@EWO_DOMAIN@@
+myorigin              = $myhostname
+mydestination         = $myhostname, localhost.$mydomain, localhost
+inet_protocols        = all
+inet_interfaces       = all
+mynetworks            = 127.0.0.0/8 [::1]/128
+biff                  = no
+append_dot_mydomain   = no
+readme_directory      = no
+compatibility_level   = 3.6
+
+# Mail size limits (raise if your users send big attachments)
+mailbox_size_limit    = 0
+message_size_limit    = 52428800
+recipient_delimiter   = +
+
+# SMTPD
+smtpd_banner          = $myhostname ESMTP
+smtpd_helo_required   = yes
+smtpd_helo_restrictions =
+    permit_mynetworks,
+    permit_sasl_authenticated,
+    reject_invalid_helo_hostname,
+    reject_non_fqdn_helo_hostname
+smtpd_sender_restrictions =
+    permit_mynetworks,
+    permit_sasl_authenticated,
+    reject_sender_login_mismatch,
+    reject_authenticated_sender_login_mismatch,
+    reject_unknown_sender_domain
+smtpd_recipient_restrictions =
+    permit_mynetworks,
+    permit_sasl_authenticated,
+    reject_unauth_destination,
+    reject_unknown_recipient_domain,
+    check_policy_service unix:private/policyd-spf
+smtpd_relay_restrictions =
+    permit_mynetworks,
+    permit_sasl_authenticated,
+    reject_unauth_destination
+disable_vrfy_command  = yes
+strict_rfc821_envelopes = yes
+
+# SASL via dovecot — enabled per-service in master.cf (submission/smtps only).
+# Port 25 (foreign MTAs) intentionally does NOT advertise AUTH.
+smtpd_sasl_type       = dovecot
+smtpd_sasl_path       = private/auth
+smtpd_sasl_auth_enable = no
+smtpd_sasl_security_options = noanonymous
+smtpd_sasl_local_domain = $myhostname
+broken_sasl_auth_clients = yes
+
+# TLS
+smtpd_tls_cert_file   = /etc/ssl/ewomail/fullchain.pem
+smtpd_tls_key_file    = /etc/ssl/ewomail/private/privkey.pem
+smtpd_use_tls         = yes
+smtpd_tls_security_level = may
+smtpd_tls_protocols   = >=TLSv1.2
+smtpd_tls_mandatory_protocols = >=TLSv1.2
+smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
+smtp_tls_session_cache_database  = btree:${data_directory}/smtp_scache
+smtp_use_tls          = yes
+smtp_tls_security_level = may
+smtp_tls_protocols    = >=TLSv1.2
+
+# Virtual mailboxes via MySQL + LMTP into Dovecot
+virtual_transport      = lmtp:unix:private/dovecot-lmtp
+virtual_mailbox_domains = mysql:/etc/postfix/mysql/mysql-mailbox-domains.cf
+virtual_mailbox_maps    = mysql:/etc/postfix/mysql/mysql-mailbox-maps.cf
+virtual_alias_maps      = mysql:/etc/postfix/mysql/mysql-alias-maps.cf
+smtpd_sender_login_maps = mysql:/etc/postfix/mysql/mysql-sender-login-maps.cf
+recipient_bcc_maps      = mysql:/etc/postfix/mysql/mysql_bcc_user.cf
+
+# Amavis content filter (port 10024 → amavis; amavis re-injects on 10025)
+content_filter         = smtp-amavis:[127.0.0.1]:10024
+
+# Misc.
+smtp_helo_name         = $myhostname
+smtpd_client_connection_count_limit = 50
+smtpd_client_connection_rate_limit  = 30
+header_size_limit      = 4096000

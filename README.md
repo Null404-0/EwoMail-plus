@@ -1,74 +1,128 @@
-### 1.15.1更新说明
+# EwoMail-plus
 
-修复部分问题，添加邮箱批量删除，添加web SSL默认配置启用。
+A modernised fork of [EwoMail](https://github.com/gyxuehu/EwoMail) that runs on
+current Debian releases (no more CentOS 7), drops every dependency on the
+defunct `npm.ewomail.com` CDN, and ships a visual admin panel for the parts
+that used to need command-line work: firewall, Nginx vhosts and Let's Encrypt
+certificates.
 
-更新组件
+## At a glance
 
-### EwoMail
+| | Original | EwoMail-plus |
+|---|---|---|
+| Target OS               | CentOS 7/8                                | Debian 12 / 13                                       |
+| Package source          | Custom RPMs on `npm.ewomail.com`          | Debian apt + upstream GitHub releases only           |
+| PHP                     | 7.2                                       | 8.2 (Debian 12) / 8.4 (Debian 13)                    |
+| Webmail                 | Rainloop (abandoned 2022)                 | SnappyMail (maintained fork)                         |
+| DB admin                | phpMyAdmin                                | Adminer (single PHP file)                            |
+| SSL                     | manual self-signed                        | acme.sh + Let's Encrypt, one-click in panel          |
+| Admin URL               | `:8010` / `:7010`                         | `https://mail.<domain>/<random-path>/`               |
+| DB admin URL            | `:8020`                                   | `https://mail.<domain>/<random-path>/` (toggleable)  |
+| Public web ports        | 8000, 7000, 8010, 7010, 8020              | 80 + 443 only (everything else stays on 127.0.0.1)   |
+| Default admin password  | `admin / ewomail123` (hardcoded)          | `admin / <random 20-char>` (per install)             |
+| Firewall                | `iptables` / hand-rolled `firewall-cmd`   | `firewalld` zone `ewomail` + visual page             |
+| Installer               | one-shot shell script                     | interactive: progress, DNS pre-check, DKIM print-out |
 
-EwoMail是基于Linux的开源邮件服务器软件，集成了众多优秀稳定的组件，是一个快速部署、简单高效、多语言、安全稳定的邮件解决方案，帮助你提升运维效率，降低 IT 成本，兼容主流的邮件客户端，同时支持电脑和手机邮件客户端。
+## Requirements
 
-### 集成组件
+A **clean** Debian 12 or 13 VPS, dedicated to this project (the installer
+refuses to run if a conflicting MTA / web server / DB is already installed).
 
+- 1 vCPU, 2 GB RAM, 20 GB disk — minimum
+- Public IPv4 reachable on 25 / 80 / 443 / 465 / 587 / 993 / 995
+- A bare domain you control (e.g. `example.com`, *not* `mail.example.com`)
+- Reverse DNS (PTR) → `mail.<domain>` configured at your VPS provider
 
-Postfix：SMTP服务
+## Install
 
-Dovecot：IMAP/POP3/邮件存储
+```bash
+apt update && apt -y install git
+git clone https://github.com/Null404-0/EwoMail-plus.git
+cd EwoMail-plus
+./install/install.sh
+```
 
-Amavisd：反垃圾和防病毒
+The installer is interactive: it asks for your domain, admin email and a few
+toggles, then runs through 14 stages with progress reporting. Total install
+time is ~10 minutes on a 2 GB VPS.
 
-LNAMP：，nginx，mysql，php
+When it finishes you get:
 
-EwoMail-Admin：WEB邮箱管理后台
+- A randomly generated admin password
+- Random URL paths for the admin panel and Adminer
+- A `/ewomail/credentials.txt` (mode 0600, root-only) with everything you need
+- DKIM / SPF / DMARC records printed and ready to paste into your DNS
 
-Rainloop：webmail
+## After install — DNS records
 
-### 安装环境
-
-centos 7/8系统，服务器需要干净环境，全新安装的系统。
-
-最低配置要求
-
-CPU：1核
-
-内存：2G
-
-硬盘：40G
-
-带宽：1-3M
-
-
-
-**国外网络** 请在安装域名后面加空格加en，例如  sh ./start.sh ewomail.cn en
-
-### centos7/8
+Publish these on the domain you used (the installer prints exact values for
+your install at the end):
 
 ```
-yum -y install git
-cd /root
-git clone https://github.com/gyxuehu/EwoMail.git
-cd /root/EwoMail/install
-#需要输入一个邮箱域名，不需要前缀，列如下面的ewomail.cn
-sh ./start.sh ewomail.cn
+A      mail              <server-ipv4>
+MX     @                 mail.<domain>.   priority 10
+TXT    @                 "v=spf1 mx ~all"
+TXT    _dmarc            "v=DMARC1; p=quarantine; rua=mailto:postmaster@<domain>"
+TXT    dkim._domainkey   "v=DKIM1; k=rsa; p=<key-from-credentials-file>"
 ```
- **国外网络** 请在安装域名后面加空格加en，例如  sh ./start.sh ewomail.cn en
- 
- 安装教程
 
-http://doc.ewomail.com/docs/ewomail/install
+…and a PTR record at your VPS provider pointing `<server-ipv4>` → `mail.<domain>`.
 
-更新教程
-http://doc.ewomail.com/docs/ewomail/update
+## Admin panel walkthrough
 
-### 邮箱后台
+Once DNS is live, navigate to:
 
-![ewomail-admin](https://box.kancloud.cn/c362878ba731559b09eae36b7236bde5_1366x609.png "ewomail-admin")
+```
+https://mail.<domain>/<random-admin-path>/
+```
 
-### webmail
+Log in as `admin` with the password printed at install time (also in
+`/ewomail/credentials.txt`).
 
-![webmail](https://box.kancloud.cn/3de1da2809f14048fb4cb3b32d0408d1_1183x476.png "webmail")
+Left navigation includes a **Server** section with:
 
+- **Firewall** — open / close ports, block / unblock IPv4 addresses via the
+  firewalld `ewomail` zone. Changes are persisted (`--permanent`) and applied
+  immediately (`--reload`).
+- **Nginx** — list vhost files, inline edit with auto rollback when
+  `nginx -t` fails, enable / disable each site.
+- **SSL** — issue, renew, and install Let's Encrypt certificates via acme.sh
+  (HTTP-01 webroot). acme.sh auto-renews every 60 days via the cron entry it
+  installs.
+- **Settings** — rotate the admin URL path, rotate the database admin URL,
+  toggle the database admin entry on/off, change the admin password.
 
-### 安装或使用过程遇到问题
+## Uninstall
 
-http://doc.ewomail.com/docs/ewomail/solve
+EwoMail-plus is designed for a dedicated VPS. To remove it, reinstall the OS.
+This is intentional: mixing it with another stack on the same machine — or
+trying to peel it off — is what broke previous attempts. If the VPS is
+disposable (it should be), this constraint costs you nothing.
+
+## File layout
+
+```
+EwoMail-plus/
+├── install/
+│   ├── install.sh         entry point (interactive)
+│   ├── lib/*.sh           per-stage logic
+│   └── templates/         service config templates (rendered at install)
+└── ewomail-admin/         PHP/Smarty admin panel
+    ├── module/Center/     routes (Firewall / Nginx / Cert / Setting added)
+    └── templates/Center/  views
+```
+
+> SnappyMail itself isn't vendored in this repo; the installer downloads the
+> latest release ZIP (currently 2.38.3) at install time.
+
+## Reporting issues
+
+Open an issue with:
+
+1. Output of `/var/log/ewomail-install.log` (tail 200 lines).
+2. `cat /etc/os-release`.
+3. The exact step where the installer failed (the brackets `[N/14]`).
+
+## License
+
+Inherits the original EwoMail license; see `LICENSE`.

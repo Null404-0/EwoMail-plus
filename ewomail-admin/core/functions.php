@@ -177,24 +177,31 @@ function U($path,$p=null)
         }
         $path = implode("/",$paths);
     }
-    
+
     if($path){
         $path = '/'.$path;
     }else{
         $path = '/';
     }
-    
+
+    // Prepend admin base path when the panel is mounted under /<admin_path>/.
+    // Configured by the installer; absent in the legacy deployment shape.
+    $base = trim((string)C('admin_path'), '/');
+    if($base !== ''){
+        $path = '/'.$base.($path === '/' ? '/' : $path);
+    }
+
     if($p){
         if(is_array($p)){
             $var = http_build_query($p);
             $path .= '?'.$var;
         }else{
             $path .= '?'.$p;
-        } 
+        }
     }
-    
+
     return $path;
-    
+
 }
 
 /**

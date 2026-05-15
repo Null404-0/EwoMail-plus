@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# /ewomail/sbin/ewomail-helper
+#
+# Runs root-only operations on behalf of the admin panel (PHP/www-data).
+# Reachable via sudo with strict /etc/sudoers.d/ewomail rules. Every argument
+# is validated before any privileged action is taken; no arbitrary commands
+# are ever passed to a shell.
+
+set -Eeuo pipefail
+umask 077
+
+usage() {
+    cat >&2 <<EOF
+ewomail-helper <command> [args...]
+
+Firewall:
+  fw-list                                  show open ports
+  fw-add    <port>/<tcp|udp>               open a port permanently
+  fw-del    <port>/<tcp|udp>               close a port permanently
+  fw-block  <ip>                           rich-rule reject from IP
+  fw-unblock <ip>
+  fw-allowlist-add <ip>
+  fw-allowlist-del <ip>
+  fw-reload
+
+Nginx:
+  nginx-list                               list site files
+  nginx-test                               nginx -t
+  nginx-reload                             reload nginx
+  nginx-cat   <name>                       cat sites-available/<name>
+  nginx-save  <name>                       write stdin to sites-available/<name>
+  nginx-enable  <name>
+  nginx-disable <name>
+
+Certificate:
+  cert-issue <fqdn>                        --issue via webroot at /ewomail/www/default
+  cert-renew <fqdn>
+  cert-list
+  cert-install <fqdn>                      copy current cert to /etc/ssl/ewomail
+
+Service:
+  svc-status <name>
+  svc-restart <name>                       (whitelist of names only)
+
+Setting:
+  setting-rotate-admin-path
+  setting-rotate-db-path
+  setting-toggle-db <on|off>
+EOF
+    exit 2
+}
+
+valid_port_proto() { [[ "$1" =~ ^[0-9]+/(tcp|udp)$ ]]; }
+valid_ipv4()       { [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; }
+valid_fqdn()       { [[ "$1" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]]; }
+valid_site_name()  { [[ "$1" =~ ^[a-zA-Z0-9._-]+\.conf$ ]]; }
+valid_service() {
+    case "$1" in
+        nginx|postfix|dovecot|amavis|spamassassin|clamav-daemon|clamav-freshclam|\
+        mariadb|fail2ban|firewalld) return 0 ;;
+        php*-fpm)
+            [[ "$1" =~ ^php8\.[2-9]-fpm$ ]]   # 8.2 .. 8.9
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+ZONE="ewomail"
+
+cmd="${1:-}"
+shift || true
+[[ -z "${cmd}" ]] && usage
+
+case "${cmd}" in
+    # ---- Firewall ----
+    fw-list)
+        firewall-cmd --zone="${ZONE}" --list-all
+        ;;
+    fw-add)
+        [[ $# -eq 1 ]] && valid_port_proto "$1" || usage
+        firewall-cmd --permanent --zone="${ZONE}" --add-port="$1"
+        firewall-cmd --reload
+        ;;
+    fw-del)
+        [[ $# -eq 1 ]] && valid_port_proto "$1" || usage
+        firewall-cmd --permanent --zone="${ZONE}" --remove-port="$1"
+        firewall-cmd --reload
+        ;;
+    fw-block)
+        [[ $# -eq 1 ]] && valid_ipv4 "$1" || usage
+        firewall-cmd --permanent --zone="${ZONE}" \
+            --add-rich-rule="rule family=ipv4 source address=$1 reject"
+        firewall-cmd --reload
+        ;;
+    fw-unblock)
+        [[ $# -eq 1 ]] && valid_ipv4 "$1" || usage
+        firewall-cmd --permanent --zone="${ZONE}" \
+            --remove-rich-rule="rule family=ipv4 source address=$1 reject" || true
+        firewall-cmd --reload
+        ;;
+    fw-allowlist-add)
+        [[ $# -eq 1 ]] && valid_ipv4 "$1" || usage
+        firewall-cmd --permanent --zone=trusted --add-source="$1"
+        firewall-cmd --reload
+        ;;
+    fw-allowlist-del)
+        [[ $# -eq 1 ]] && valid_ipv4 "$1" || usage
+        firewall-cmd --permanent --zone=trusted --remove-source="$1" || true
+        firewall-cmd --reload
+        ;;
+    fw-reload)
+        firewall-cmd --reload
+        ;;
+
+    # ---- Nginx ----
+    nginx-list)
+        ls -1 /etc/nginx/sites-available/
+        ;;
+    nginx-test)
+        nginx -t 2>&1
+        ;;
+    nginx-reload)
+        nginx -t >/dev/null
+        systemctl reload nginx
+        ;;
+    nginx-cat)
+        [[ $# -eq 1 ]] && valid_site_name "$1" || usage
+        [[ -f "/etc/nginx/sites-available/$1" ]] || { echo "no such site" >&2; exit 1; }
+        cat "/etc/nginx/sites-available/$1"
+        ;;
+    nginx-save)
+        [[ $# -eq 1 ]] && valid_site_name "$1" || usage
+        tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT
+        cat > "$tmp"
+        # Validate by including just this file via a throwaway test.
+        cp "/etc/nginx/sites-available/$1" "/etc/nginx/sites-available/$1.bak" 2>/dev/null || true
+        install -m 0644 "$tmp" "/etc/nginx/sites-available/$1"
+        if ! nginx -t >/dev/null 2>&1; then
+            [[ -f "/etc/nginx/sites-available/$1.bak" ]] && mv "/etc/nginx/sites-available/$1.bak" "/etc/nginx/sites-available/$1"
+            echo "nginx -t failed; reverted" >&2
+            exit 3
+        fi
+        rm -f "/etc/nginx/sites-available/$1.bak"
+        systemctl reload nginx
+        ;;
+    nginx-enable)
+        [[ $# -eq 1 ]] && valid_site_name "$1" || usage
+        ln -sf "/etc/nginx/sites-available/$1" "/etc/nginx/sites-enabled/$1"
+        nginx -t >/dev/null && systemctl reload nginx
+        ;;
+    nginx-disable)
+        [[ $# -eq 1 ]] && valid_site_name "$1" || usage
+        rm -f "/etc/nginx/sites-enabled/$1"
+        nginx -t >/dev/null && systemctl reload nginx
+        ;;
+
+    # ---- Cert ----
+    cert-issue)
+        [[ $# -eq 1 ]] && valid_fqdn "$1" || usage
+        /root/.acme.sh/acme.sh --issue -d "$1" -w /ewomail/www/default --server letsencrypt
+        ;;
+    cert-renew)
+        [[ $# -eq 1 ]] && valid_fqdn "$1" || usage
+        /root/.acme.sh/acme.sh --renew -d "$1" --force --ecc 2>/dev/null || \
+        /root/.acme.sh/acme.sh --renew -d "$1" --force
+        ;;
+    cert-list)
+        /root/.acme.sh/acme.sh --list
+        ;;
+    cert-install)
+        [[ $# -eq 1 ]] && valid_fqdn "$1" || usage
+        /root/.acme.sh/acme.sh --install-cert -d "$1" \
+            --key-file       /etc/ssl/ewomail/private/privkey.pem \
+            --fullchain-file /etc/ssl/ewomail/fullchain.pem \
+            --reloadcmd      "systemctl reload nginx; systemctl reload postfix; systemctl reload dovecot"
+        ;;
+
+    # ---- Service ----
+    svc-status)
+        [[ $# -eq 1 ]] && valid_service "$1" || usage
+        systemctl status "$1" --no-pager
+        ;;
+    svc-restart)
+        [[ $# -eq 1 ]] && valid_service "$1" || usage
+        systemctl restart "$1"
+        ;;
+
+    # ---- Setting ----
+    setting-rotate-admin-path)
+        new=$(tr -dc 'a-z0-9' </dev/urandom | head -c 16)
+        new="adm-${new}"
+        old=$(mysql -uroot -N -B ewomail -e "SELECT value FROM i_panel_setting WHERE name='admin_path'")
+        mysql -uroot ewomail -e "UPDATE i_panel_setting SET value='${new}' WHERE name='admin_path'"
+        sed -i "s|/${old}/|/${new}/|g; s|/${old}\$|/${new}|g" /etc/nginx/sites-available/ewomail.conf
+        nginx -t >/dev/null && systemctl reload nginx
+        echo "${new}"
+        ;;
+    setting-rotate-db-path)
+        new=$(tr -dc 'a-z0-9' </dev/urandom | head -c 16)
+        new="db-${new}"
+        old=$(mysql -uroot -N -B ewomail -e "SELECT value FROM i_panel_setting WHERE name='db_path'")
+        mysql -uroot ewomail -e "UPDATE i_panel_setting SET value='${new}' WHERE name='db_path'"
+        sed -i "s|/${old}/|/${new}/|g" /etc/nginx/sites-available/ewomail.conf
+        nginx -t >/dev/null && systemctl reload nginx
+        echo "${new}"
+        ;;
+    setting-toggle-db)
+        case "${1:-}" in
+            on)  state=yes ;;
+            off) state=no  ;;
+            *)   usage ;;
+        esac
+        mysql -uroot ewomail -e "UPDATE i_panel_setting SET value='${state}' WHERE name='db_admin_enable'"
+        conf=/etc/nginx/sites-available/ewomail.conf
+        # Always ensure exactly one of the two states is present:
+        #   disabled → a line "return 404; # EWOMAIL_DB_DISABLED" inside the location
+        #   enabled  → that line absent
+        sed -i '/return 404; # EWOMAIL_DB_DISABLED/d' "${conf}"
+        if [[ "${state}" == "no" ]]; then
+            sed -i '/alias \/ewomail\/www\/adminer\/;/a\        return 404; # EWOMAIL_DB_DISABLED' "${conf}"
+        fi
+        nginx -t >/dev/null && systemctl reload nginx
+        ;;
+
+    *) usage ;;
+esac
