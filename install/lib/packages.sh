@@ -2,6 +2,10 @@
 
 install_apt_packages() {
     export DEBIAN_FRONTEND=noninteractive
+    # Belt and braces: some packages still prompt at priority=high even with
+    # frontend=noninteractive unless DEBCONF_NONINTERACTIVE_SEEN is set.
+    export DEBCONF_NONINTERACTIVE_SEEN=true
+    export APT_LISTCHANGES_FRONTEND=none
 
     ui_info "Refreshing package index"
     run apt-get update

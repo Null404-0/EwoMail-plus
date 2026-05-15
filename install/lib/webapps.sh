@@ -1,7 +1,7 @@
 # Pulls EwoMail-Admin, SnappyMail, Adminer into /ewomail/www.
 
 SNAPPYMAIL_VERSION="2.38.3"
-ADMINER_VERSION="4.8.1"
+ADMINER_VERSION="4.8.4"   # last 4.x stable (2023); 5.x is still alpha
 
 _fetch() {
     local url="$1" dest="$2"
@@ -35,6 +35,22 @@ install_webapps() {
         install -d -m 0755 /ewomail/www/snappymail
         run unzip -q -o "${snappy_zip}" -d /ewomail/www/snappymail
         rm -f "${snappy_zip}"
+        # SnappyMail zips have historically been flat (no top-level dir), but
+        # some releases wrap their files in one. Flatten if needed.
+        if [[ ! -f /ewomail/www/snappymail/index.php ]]; then
+            local inner; inner=$(find /ewomail/www/snappymail -maxdepth 2 -name 'index.php' -printf '%h\n' | head -1)
+            if [[ -n "${inner}" && "${inner}" != "/ewomail/www/snappymail" ]]; then
+                ui_info "Flattening SnappyMail archive from ${inner}"
+                shopt -s dotglob
+                mv "${inner}"/* /ewomail/www/snappymail/
+                shopt -u dotglob
+                rmdir "${inner}" 2>/dev/null || true
+            fi
+        fi
+        if [[ ! -f /ewomail/www/snappymail/index.php ]]; then
+            ui_err "SnappyMail extraction did not produce index.php"
+            return 1
+        fi
     fi
 
     # 3. Adminer (single PHP file).

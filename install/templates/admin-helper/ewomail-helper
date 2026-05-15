@@ -175,7 +175,9 @@ case "${cmd}" in
         /root/.acme.sh/acme.sh --renew -d "$1" --force
         ;;
     cert-list)
-        /root/.acme.sh/acme.sh --list
+        # --listraw outputs pipe-delimited stable columns:
+        #   Main_Domain|KeyLength|SAN_Domains|CA|Created|Renew
+        /root/.acme.sh/acme.sh --listraw
         ;;
     cert-install)
         [[ $# -eq 1 ]] && valid_fqdn "$1" || usage

@@ -14,10 +14,22 @@ setup_postfix() {
         chown root:postfix "/etc/postfix/mysql/${f}"
     done
 
-    # Vmail user (shared with Dovecot).
-    if ! getent group vmail >/dev/null;  then groupadd -g 5000 vmail; fi
+    # Vmail user (shared with Dovecot). Prefer UID/GID 5000 to keep the
+    # historic value, but fall back to a system-allocated UID if 5000 is
+    # already taken — useradd -u 5000 hard-fails otherwise on some images.
+    if ! getent group vmail >/dev/null; then
+        if getent group 5000 >/dev/null; then
+            groupadd vmail
+        else
+            groupadd -g 5000 vmail
+        fi
+    fi
     if ! getent passwd vmail >/dev/null; then
-        useradd -M -u 5000 -g vmail -s /usr/sbin/nologin -d /ewomail/mail vmail
+        if getent passwd 5000 >/dev/null; then
+            useradd -M -g vmail -s /usr/sbin/nologin -d /ewomail/mail vmail
+        else
+            useradd -M -u 5000 -g vmail -s /usr/sbin/nologin -d /ewomail/mail vmail
+        fi
     fi
     install -d -m 0770 -o vmail -g vmail /ewomail/mail
     install -d -m 0770 -o vmail -g vmail /ewomail/mail/vhosts
