@@ -28,10 +28,10 @@ EOF
         ca-certificates curl wget gnupg lsb-release unzip git
         rsync socat cron logrotate
         # Mail stack
-        postfix postfix-mysql
+        postfix postfix-mysql postfix-policyd-spf-python
         dovecot-core dovecot-imapd dovecot-pop3d dovecot-lmtpd
         dovecot-mysql dovecot-sieve dovecot-managesieved
-        amavisd-new spamassassin clamav clamav-daemon clamav-freshclam
+        amavisd-new spamassassin spamc clamav clamav-daemon clamav-freshclam
         opendkim opendkim-tools
         # Web / DB / runtime
         mariadb-server mariadb-client

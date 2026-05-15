@@ -1,0 +1,27 @@
+use strict;
+
+$mydomain     = '@@EWO_DOMAIN@@';
+$myhostname   = '@@EWO_MAIL_HOST@@';
+$inet_socket_bind = '127.0.0.1';
+$inet_socket_port = [10024];
+$forward_method  = 'smtp:127.0.0.1:10025';
+$notify_method   = 'smtp:127.0.0.1:10025';
+
+# Disposition: tag-and-pass — never silently drop, never bounce mid-flight.
+$final_virus_destiny     = D_PASS;
+$final_banned_destiny    = D_PASS;
+$final_spam_destiny      = D_PASS;
+$final_bad_header_destiny = D_PASS;
+
+# DKIM signing.
+dkim_key('@@EWO_DOMAIN@@', 'dkim', '/ewomail/dkim/@@EWO_DOMAIN@@.pem');
+@dkim_signature_options_bysender_maps = ({
+    '.' => { c => 'relaxed/simple', ttl => 30*24*3600 },
+});
+$signed_header_fields{'received'} = 0;
+$signed_header_fields{'to'}       = 1;
+$originating = 1;
+
+@local_domains_maps = (['.'.$mydomain]);
+
+1;  # ensure a defined return
