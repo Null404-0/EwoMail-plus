@@ -57,7 +57,10 @@ valid_site_name()  { [[ "$1" =~ ^[a-zA-Z0-9._-]+\.conf$ ]]; }
 valid_service() {
     case "$1" in
         nginx|postfix|dovecot|amavis|spamassassin|clamav-daemon|clamav-freshclam|\
-        mariadb|fail2ban|firewalld|php8.2-fpm|php8.3-fpm|php8.4-fpm) return 0 ;;
+        mariadb|fail2ban|firewalld) return 0 ;;
+        php*-fpm)
+            [[ "$1" =~ ^php8\.[2-9]-fpm$ ]]   # 8.2 .. 8.9
+            ;;
         *) return 1 ;;
     esac
 }
@@ -208,15 +211,13 @@ case "${cmd}" in
             *)   usage ;;
         esac
         mysql -uroot ewomail -e "UPDATE i_panel_setting SET value='${state}' WHERE name='db_admin_enable'"
-        # Re-render the Adminer location by toggling the sentinel.
+        conf=/etc/nginx/sites-available/ewomail.conf
+        # Always ensure exactly one of the two states is present:
+        #   disabled → a line "return 404; # EWOMAIL_DB_DISABLED" inside the location
+        #   enabled  → that line absent
+        sed -i '/return 404; # EWOMAIL_DB_DISABLED/d' "${conf}"
         if [[ "${state}" == "no" ]]; then
-            # Insert "return 404;" after the EWO_DB_PATH alias line if missing.
-            if ! grep -qE "^\s*return 404;\s*# EWOMAIL_DB_DISABLED" /etc/nginx/sites-available/ewomail.conf; then
-                sed -i '/alias \/ewomail\/www\/adminer\/;/a\        return 404; # EWOMAIL_DB_DISABLED' \
-                    /etc/nginx/sites-available/ewomail.conf
-            fi
-        else
-            sed -i '/return 404; # EWOMAIL_DB_DISABLED/d' /etc/nginx/sites-available/ewomail.conf
+            sed -i '/alias \/ewomail\/www\/adminer\/;/a\        return 404; # EWOMAIL_DB_DISABLED' "${conf}"
         fi
         nginx -t >/dev/null && systemctl reload nginx
         ;;

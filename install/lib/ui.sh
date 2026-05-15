@@ -15,7 +15,7 @@ else
 fi
 
 UI_STEP_INDEX=0
-UI_STEP_TOTAL=16
+UI_STEP_TOTAL=14
 
 ui_banner() {
     local title="$1"

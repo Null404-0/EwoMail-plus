@@ -20,13 +20,14 @@ setup_nginx() {
     rm -f /etc/nginx/sites-enabled/default
     ln -sf /etc/nginx/sites-available/ewomail.conf /etc/nginx/sites-enabled/ewomail.conf
 
-    # Optionally drop the Adminer location.
+    # Optionally drop the Adminer location. Use the same sentinel marker the
+    # helper script writes at runtime, so toggling later from the panel is a
+    # straightforward in-place insert/delete.
     if [[ "${EWO_DB_ADMIN_ENABLED}" != "yes" ]]; then
-        # Mark Adminer disabled in the rendered file by adding a "return 404"
-        # in the random db path block. The template includes a sentinel.
-        sed -i 's|## EWOMAIL_DB_ENABLED ##|return 404;|' /etc/nginx/sites-available/ewomail.conf
+        sed -i 's|## EWOMAIL_DB_ENABLED ##|return 404; # EWOMAIL_DB_DISABLED|' \
+            /etc/nginx/sites-available/ewomail.conf
     else
-        sed -i 's|## EWOMAIL_DB_ENABLED ##||' /etc/nginx/sites-available/ewomail.conf
+        sed -i '/## EWOMAIL_DB_ENABLED ##/d' /etc/nginx/sites-available/ewomail.conf
     fi
 
     run nginx -t

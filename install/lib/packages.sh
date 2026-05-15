@@ -2,18 +2,28 @@
 
 install_apt_packages() {
     export DEBIAN_FRONTEND=noninteractive
-    case "${EWO_OS_VER}" in
-        12) EWO_PHP_VER="8.2" ;;
-        13) EWO_PHP_VER="8.4" ;;
-        *)  ui_err "Unhandled Debian version ${EWO_OS_VER}"; return 1 ;;
-    esac
-    export EWO_PHP_VER
-    EWO_PHP_SOCK="/run/php/php${EWO_PHP_VER}-fpm-ewomail.sock"
-    EWO_PHP_FPM_SERVICE="php${EWO_PHP_VER}-fpm"
-    export EWO_PHP_SOCK EWO_PHP_FPM_SERVICE
 
     ui_info "Refreshing package index"
     run apt-get update
+
+    # Detect which PHP-FPM version is available in this Debian release.
+    # Debian 12 ships 8.2; Debian 13 ships 8.3 or 8.4 depending on freeze date.
+    local candidate=""
+    for v in 8.4 8.3 8.2; do
+        if apt-cache show "php${v}-fpm" >/dev/null 2>&1; then
+            candidate="${v}"
+            break
+        fi
+    done
+    if [[ -z "${candidate}" ]]; then
+        ui_err "No supported PHP-FPM package (8.2/8.3/8.4) found in this Debian release."
+        return 1
+    fi
+    EWO_PHP_VER="${candidate}"
+    EWO_PHP_SOCK="/run/php/php${EWO_PHP_VER}-fpm-ewomail.sock"
+    EWO_PHP_FPM_SERVICE="php${EWO_PHP_VER}-fpm"
+    export EWO_PHP_VER EWO_PHP_SOCK EWO_PHP_FPM_SERVICE
+    ui_ok "PHP-FPM version: ${EWO_PHP_VER}"
 
     # Pre-seed postfix so dpkg does not prompt.
     debconf-set-selections <<EOF
