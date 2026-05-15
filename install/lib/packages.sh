@@ -37,12 +37,12 @@ EOF
     local packages=(
         ca-certificates curl wget gnupg lsb-release unzip git
         rsync socat cron logrotate
-        # Mail stack
+        # Mail stack — DKIM signing is done by amavis, so opendkim is not
+        # needed (its daemon would otherwise start with no usable config).
         postfix postfix-mysql postfix-policyd-spf-python
         dovecot-core dovecot-imapd dovecot-pop3d dovecot-lmtpd
         dovecot-mysql dovecot-sieve dovecot-managesieved
         amavisd-new spamassassin spamc clamav clamav-daemon clamav-freshclam
-        opendkim opendkim-tools
         # Web / DB / runtime
         mariadb-server mariadb-client
         nginx
@@ -52,8 +52,9 @@ EOF
         "php${EWO_PHP_VER}-zip"   "php${EWO_PHP_VER}-gd"
         "php${EWO_PHP_VER}-intl"  "php${EWO_PHP_VER}-bcmath"
         "php${EWO_PHP_VER}-imap"  "php${EWO_PHP_VER}-opcache"
-        # Security
-        firewalld fail2ban
+        # Security — python3-systemd is required for fail2ban's
+        # `backend = systemd` jail config to read the journal.
+        firewalld fail2ban python3-systemd
     )
 
     run apt-get install -y --no-install-recommends "${packages[@]}"
@@ -61,7 +62,7 @@ EOF
 
     # Stop services we will reconfigure; we start them again at the end.
     for svc in postfix dovecot amavis spamassassin clamav-daemon clamav-freshclam nginx \
-               "${EWO_PHP_FPM_SERVICE}" mariadb opendkim; do
+               "${EWO_PHP_FPM_SERVICE}" mariadb; do
         if systemctl list-unit-files --type=service | grep -q "^${svc}\.service"; then
             run_quiet systemctl stop "${svc}" || true
         fi

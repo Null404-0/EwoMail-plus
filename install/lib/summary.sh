@@ -13,7 +13,9 @@ write_credentials_file() {
     export EWO_DKIM_TXT
 
     install -d -m 0700 "${EWOMAIL_PREFIX}"
-    umask 077
+    # Create the file with restrictive perms BEFORE writing any content to
+    # close the TOCTOU window where another local user might race a read.
+    install -m 0600 /dev/null "${CREDENTIALS_FILE}"
     cat > "${CREDENTIALS_FILE}" <<EOF
 # EwoMail-plus credentials — generated at $(date -Iseconds)
 # Keep this file secret. chmod 600.

@@ -22,14 +22,16 @@ setup_postfix() {
     install -d -m 0770 -o vmail -g vmail /ewomail/mail
     install -d -m 0770 -o vmail -g vmail /ewomail/mail/vhosts
 
-    # Hostname.
-    hostnamectl set-hostname "${EWO_MAIL_HOST}" || true
+    # Hostname. May not be available inside unprivileged containers; ignore
+    # the failure and rely on /etc/hostname + /etc/hosts.
+    hostnamectl set-hostname "${EWO_MAIL_HOST}" >>"${LOG_FILE}" 2>&1 || \
+        echo "${EWO_MAIL_HOST}" > /etc/hostname
     if ! grep -q "${EWO_MAIL_HOST}" /etc/hosts; then
         echo "127.0.1.1 ${EWO_MAIL_HOST} mail" >> /etc/hosts
     fi
 
-    # Generate a default self-signed cert that Postfix/Dovecot/Nginx can fall
-    # back to before Let's Encrypt issues real ones.
+    # Generate a default self-signed cert + DH params that Postfix/Dovecot/
+    # Nginx can fall back to before Let's Encrypt issues real ones.
     install -d -m 0755 /etc/ssl/ewomail
     install -d -m 0700 /etc/ssl/ewomail/private
     if [[ ! -f /etc/ssl/ewomail/fullchain.pem ]]; then
@@ -38,6 +40,12 @@ setup_postfix() {
             -out    /etc/ssl/ewomail/fullchain.pem \
             -subj "/CN=${EWO_MAIL_HOST}" >>"${LOG_FILE}" 2>&1
         chmod 600 /etc/ssl/ewomail/private/privkey.pem
+    fi
+    if [[ ! -f /etc/ssl/ewomail/dh.pem ]]; then
+        # 2048 bits is the FFDHE recommendation. Generation is slow on a
+        # cold VPS (30-60s); acceptable since this runs only once.
+        openssl dhparam -out /etc/ssl/ewomail/dh.pem 2048 >>"${LOG_FILE}" 2>&1
+        chmod 644 /etc/ssl/ewomail/dh.pem
     fi
 
     ui_ok "Postfix configured (main.cf, master.cf, mysql lookup tables)"

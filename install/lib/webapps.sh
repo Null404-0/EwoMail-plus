@@ -51,5 +51,13 @@ install_webapps() {
     chmod -R 0770 /ewomail/www/session
     chown -R www-data:www-data /ewomail/www/session
 
+    # SnappyMail keeps storage (user prefs, encrypted credentials) under
+    # /ewomail/www/snappymail/data. Restrict it to the www-data group only.
+    if [[ -d /ewomail/www/snappymail/data ]]; then
+        chmod 0750 /ewomail/www/snappymail/data
+        find /ewomail/www/snappymail/data -type d -exec chmod 0750 {} +
+        find /ewomail/www/snappymail/data -type f -exec chmod 0640 {} +
+    fi
+
     ui_ok "Web applications installed under /ewomail/www"
 }
