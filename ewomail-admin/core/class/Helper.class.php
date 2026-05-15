@@ -66,9 +66,15 @@ class Helper
     /** Reads a panel setting from i_panel_setting (created by installer). */
     public static function setting($name, $default = '')
     {
-        $row = App::$db->getOne(
-            "SELECT value FROM i_panel_setting WHERE name='" . App::$db->real_escape_string($name) . "'"
-        );
+        // Whitelist: panel keys are fixed, so we never accept arbitrary input.
+        static $allowed = [
+            'admin_path', 'db_path', 'db_admin_enable',
+            'mail_host', 'public_ip', 'le_email',
+        ];
+        if (!in_array($name, $allowed, true)) {
+            return $default;
+        }
+        $row = App::$db->getOne("SELECT value FROM i_panel_setting WHERE name='" . $name . "'");
         return isset($row['value']) ? $row['value'] : $default;
     }
 }

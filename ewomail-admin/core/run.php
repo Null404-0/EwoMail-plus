@@ -39,11 +39,24 @@ spl_autoload_register(function($class_name){
 
 //url映射
 Rout::core(function(){
-    //nginx
-    if(isset($_SERVER['DOCUMENT_URI'])){
+    // When the admin panel is mounted under /<admin_path>/ (EwoMail-plus default),
+    // PHP-FPM hands us PATH_INFO already stripped of both the base path and the
+    // index.php segment, so prefer that. Fall back to the legacy DOCUMENT_URI
+    // logic for backwards compatibility with the original deployment shape.
+    if(!empty($_SERVER['PATH_INFO']) && $_SERVER['PATH_INFO'] !== '/'){
+        $_SERVER['REDIRECT_URL'] = $_SERVER['PATH_INFO'];
+    }else if(isset($_SERVER['DOCUMENT_URI'])){
         $DOCUMENT_URI = trim($_SERVER['DOCUMENT_URI'],'/');
         $paths = explode('/',$DOCUMENT_URI);
-        unset($paths[0]);
+        // Strip leading base-path segment if it matches the configured admin_path,
+        // then drop the index.php segment as the original code did.
+        $base = trim((string)C('admin_path'), '/');
+        if($base !== '' && isset($paths[0]) && $paths[0] === $base){
+            array_shift($paths);
+        }
+        if(isset($paths[0]) && $paths[0] === 'index.php'){
+            array_shift($paths);
+        }
         $_SERVER['REDIRECT_URL'] = '/'.implode("/",$paths);
         $paths = null;
     }
