@@ -65,6 +65,9 @@ EOF
     chown root:www-data /ewomail/sbin/ewomail-helper
 
     # Sudoers — restrict www-data to exactly this helper, nothing else.
+    # /etc/sudoers.d is shipped by the sudo package; defensively recreate it
+    # in case the install ordering was unusual.
+    install -d -m 0750 -o root -g root /etc/sudoers.d
     cat > /etc/sudoers.d/ewomail <<EOF
 www-data ALL=(root) NOPASSWD: /ewomail/sbin/ewomail-helper
 Defaults!/ewomail/sbin/ewomail-helper !requiretty

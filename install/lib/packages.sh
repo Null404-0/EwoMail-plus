@@ -40,6 +40,9 @@ EOF
     ui_dim "Live apt output follows; each line is prefixed with │."
 
     local packages=(
+        # The PHP admin panel shells out via \`sudo /ewomail/sbin/ewomail-helper\`;
+        # sudo is NOT installed by default on Debian minimal images.
+        sudo
         ca-certificates curl wget gnupg lsb-release unzip git
         rsync socat cron logrotate
         # Mail stack — DKIM signing is done by amavis, so opendkim is not
