@@ -69,7 +69,8 @@ EOF
     ui_ok "All packages installed"
 
     # Stop services we will reconfigure; we start them again at the end.
-    for svc in postfix dovecot amavis spamassassin clamav-daemon clamav-freshclam nginx \
+    # Debian renamed SpamAssassin's unit to spamd.service (was spamassassin).
+    for svc in postfix dovecot amavis spamd clamav-daemon clamav-freshclam nginx \
                "${EWO_PHP_FPM_SERVICE}" mariadb; do
         if systemctl list-unit-files --type=service | grep -q "^${svc}\.service"; then
             run_quiet systemctl stop "${svc}" || true
@@ -80,11 +81,20 @@ EOF
 enable_and_start_services() {
     local services=(
         mariadb "${EWO_PHP_FPM_SERVICE}"
-        postfix dovecot amavis spamassassin
+        postfix dovecot amavis spamd
         clamav-daemon clamav-freshclam
         nginx firewalld fail2ban
     )
     for svc in "${services[@]}"; do
+        # Skip cleanly if the unit doesn't exist on this distro (e.g. an old
+        # spamassassin layout). Required ones (mariadb, postfix, dovecot,
+        # nginx, php-fpm) will always be present so a missing unit there
+        # would still surface as a hard error via the next service that
+        # depends on it.
+        if ! systemctl list-unit-files --type=service | grep -q "^${svc}\.service"; then
+            ui_warn "Service unit '${svc}.service' not found; skipping."
+            continue
+        fi
         run systemctl enable --now "${svc}"
     done
     ui_ok "All services enabled & running"
