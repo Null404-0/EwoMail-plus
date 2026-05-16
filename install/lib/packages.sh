@@ -111,9 +111,14 @@ EOF
 }
 
 enable_and_start_services() {
+    # NOTE: spamassassin is intentionally NOT here. Debian 12's spamassassin
+    # package no longer ships a daemon unit (only spamassassin-maintenance
+    # for cron-like upkeep); spam scanning is performed in-process by amavis
+    # via Mail::SpamAssassin Perl modules. Starting it would fail with
+    # "Unit file not found".
     local services=(
         mariadb "${EWO_PHP_FPM_SERVICE}"
-        postfix dovecot amavis spamassassin
+        postfix dovecot amavis
         clamav-daemon clamav-freshclam
         nginx firewalld fail2ban
     )
