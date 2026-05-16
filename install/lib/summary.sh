@@ -12,7 +12,10 @@ write_credentials_file() {
     EWO_DKIM_TXT="${dkim_txt}"
     export EWO_DKIM_TXT
 
-    install -d -m 0700 "${EWOMAIL_PREFIX}"
+    # /ewomail must be world-traversable (0755): www-data and vmail need to
+    # reach their subtrees under it. Sensitive children (credentials.txt,
+    # /ewomail/dkim/) have their own restrictive perms — see below.
+    install -d -m 0755 "${EWOMAIL_PREFIX}"
     # Create the file with restrictive perms BEFORE writing any content to
     # close the TOCTOU window where another local user might race a read.
     install -m 0600 /dev/null "${CREDENTIALS_FILE}"
