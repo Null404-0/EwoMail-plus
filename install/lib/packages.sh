@@ -129,5 +129,27 @@ enable_and_start_services() {
         fi
         run systemctl enable --now "${svc}"
     done
-    ui_ok "所有服务已启动"
+
+    # Verify each service actually reached 'active'. systemd's
+    # ConditionPathExistsGlob (clamav-daemon waiting for daily.cvd) and
+    # some postinst race conditions can leave a service enabled-but-inactive
+    # even after `enable --now` returned 0. Retry once with explicit start.
+    local failed=()
+    for svc in "${services[@]}"; do
+        systemctl cat "${svc}.service" >/dev/null 2>&1 || continue
+        if [[ "$(systemctl is-active "${svc}" 2>/dev/null)" != "active" ]]; then
+            ui_warn "${svc} 未运行，尝试再启一次……"
+            run_quiet systemctl start "${svc}" || true
+            sleep 1
+            if [[ "$(systemctl is-active "${svc}" 2>/dev/null)" != "active" ]]; then
+                failed+=("${svc}")
+            fi
+        fi
+    done
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        ui_warn "以下服务仍未启动：${failed[*]}"
+        ui_warn "请逐个执行  ${UI_BOLD}journalctl -xeu <service>${UI_RESET}${UI_YELLOW} 排查后手动 systemctl start。"
+    else
+        ui_ok "所有服务已启动"
+    fi
 }
