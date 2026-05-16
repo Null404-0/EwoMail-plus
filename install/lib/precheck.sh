@@ -26,6 +26,11 @@ precheck_os() {
 }
 
 precheck_clean_machine() {
+    if [[ "${EWO_SKIP_PRECHECK:-0}" == "1" ]]; then
+        ui_warn "EWO_SKIP_PRECHECK=1 — skipping clean-machine check (resume mode)"
+        ui_warn "Steps must be idempotent; this is intended for resuming a previously failed install."
+        return 0
+    fi
     local conflicts=()
     for svc in mariadb mysql postfix dovecot nginx apache2 httpd; do
         if systemctl list-unit-files --type=service 2>/dev/null | grep -q "^${svc}\.service"; then
@@ -40,7 +45,11 @@ precheck_clean_machine() {
     if [[ ${#conflicts[@]} -gt 0 ]]; then
         ui_err "This VPS is not a clean install:"
         for c in "${conflicts[@]}"; do ui_err "  - ${c}"; done
-        ui_err "EwoMail-plus requires a dedicated, clean machine. Reinstall the OS or use another VPS."
+        ui_err ""
+        ui_err "If you are recovering from a partially-failed install (and only then),"
+        ui_err "re-run with:  EWO_SKIP_PRECHECK=1 ./install/install.sh"
+        ui_err ""
+        ui_err "Otherwise: reinstall the OS or use another VPS. EwoMail-plus owns the box."
         exit 1
     fi
     ui_ok "Machine is clean (no conflicting services or packages)"

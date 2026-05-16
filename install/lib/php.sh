@@ -3,8 +3,11 @@
 setup_php_fpm() {
     local pool_dir="/etc/php/${EWO_PHP_VER}/fpm/pool.d"
     # Disable the default www pool: nothing else on the machine uses PHP.
-    if [[ -f "${pool_dir}/www.conf" ]]; then
+    # Idempotent: skip if already disabled (otherwise mv fails on re-run).
+    if [[ -f "${pool_dir}/www.conf" && ! -f "${pool_dir}/www.conf.disabled" ]]; then
         run mv "${pool_dir}/www.conf" "${pool_dir}/www.conf.disabled"
+    elif [[ -f "${pool_dir}/www.conf" ]]; then
+        rm -f "${pool_dir}/www.conf"
     fi
     render_template "${INSTALLER_DIR}/templates/php-fpm/ewomail.conf" "${pool_dir}/ewomail.conf"
 

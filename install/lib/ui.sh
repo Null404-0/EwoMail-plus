@@ -71,6 +71,24 @@ run_quiet() {
     "$@" >>"${LOG_FILE}" 2>&1
 }
 
+# Like run(), but tees output to both terminal and log file so the user sees
+# progress for long-running commands (apt install, dhparam gen, freshclam).
+# Output is lightly indented so it visually separates from our [i]/[✓] lines.
+run_stream() {
+    log "EXEC (stream): $*"
+    local rc=0
+    if "$@" 2>&1 | tee -a "${LOG_FILE}" | sed 's/^/  │ /'; then
+        rc=${PIPESTATUS[0]}
+    else
+        rc=${PIPESTATUS[0]}
+    fi
+    if (( rc != 0 )); then
+        ui_err "Command failed (rc=${rc}): $*"
+        return "$rc"
+    fi
+    return 0
+}
+
 on_error() {
     local rc=$?
     ui_err "Installation aborted (exit ${rc}). Inspect ${LOG_FILE}."
