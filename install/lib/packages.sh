@@ -98,9 +98,12 @@ EOF
 
     # Stop services we will reconfigure; we start them again at the end.
     # Debian renamed SpamAssassin's unit to spamd.service (was spamassassin).
+    # Use `systemctl cat` instead of parsing list-unit-files: the latter's
+    # output format can include pager/color codes on some Debian images that
+    # break our literal grep, leading to false negatives.
     for svc in postfix dovecot amavis spamd clamav-daemon clamav-freshclam nginx \
                "${EWO_PHP_FPM_SERVICE}" mariadb; do
-        if systemctl list-unit-files --type=service | grep -q "^${svc}\.service"; then
+        if systemctl cat "${svc}.service" >/dev/null 2>&1; then
             run_quiet systemctl stop "${svc}" || true
         fi
     done
@@ -114,12 +117,7 @@ enable_and_start_services() {
         nginx firewalld fail2ban
     )
     for svc in "${services[@]}"; do
-        # Skip cleanly if the unit doesn't exist on this distro (e.g. an old
-        # spamassassin layout). Required ones (mariadb, postfix, dovecot,
-        # nginx, php-fpm) will always be present so a missing unit there
-        # would still surface as a hard error via the next service that
-        # depends on it.
-        if ! systemctl list-unit-files --type=service | grep -q "^${svc}\.service"; then
+        if ! systemctl cat "${svc}.service" >/dev/null 2>&1; then
             ui_warn "未找到 service '${svc}.service'，已跳过。"
             continue
         fi
