@@ -16,10 +16,10 @@ setup_ssl() {
             rm -rf "${tmp}"
             return 1
         fi
-        # acme.sh's installer auto-creates ~/.acme.sh/acme.sh and a cron entry.
-        run bash "${tmp}/acme.sh/acme.sh" --install \
-            --home /root/.acme.sh \
-            --accountemail "${EWO_ADMIN_EMAIL}"
+        # acme.sh's installer copies acme.sh from CWD via a relative path,
+        # so we must cd into the clone first; running by absolute path
+        # otherwise fails with "cp: cannot stat 'acme.sh'".
+        run bash -c "cd '${tmp}/acme.sh' && ./acme.sh --install --home /root/.acme.sh --accountemail '${EWO_ADMIN_EMAIL}'"
         rm -rf "${tmp}"
     fi
     if [[ ! -x /root/.acme.sh/acme.sh ]]; then
