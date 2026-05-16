@@ -56,10 +56,10 @@ setup_postfix() {
     if [[ ! -f /etc/ssl/ewomail/dh.pem ]]; then
         # 2048-bit FFDHE generation can take 30-90s on a cold VPS; stream
         # the dots to the terminal so the user can see we're not stuck.
-        ui_info "Generating Diffie-Hellman parameters (2048-bit, takes ~1 minute)"
+        ui_info "生成 DH 参数（2048-bit，约 1 分钟）"
         run_stream openssl dhparam -out /etc/ssl/ewomail/dh.pem 2048
         chmod 644 /etc/ssl/ewomail/dh.pem
     fi
 
-    ui_ok "Postfix configured (main.cf, master.cf, mysql lookup tables)"
+    ui_ok "Postfix 已配置（main.cf / master.cf / mysql 查表）"
 }

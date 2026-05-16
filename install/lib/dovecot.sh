@@ -20,5 +20,5 @@ setup_dovecot() {
     chmod 0640    /etc/dovecot/dovecot-sql.conf.ext
 
     install -d -m 0755 -o vmail -g vmail /ewomail/mail/sieve
-    ui_ok "Dovecot configured (IMAP/POP3/LMTP/Sieve, MySQL passdb)"
+    ui_ok "Dovecot 已配置（IMAP/POP3/LMTP/Sieve，MySQL passdb）"
 }

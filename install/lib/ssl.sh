@@ -12,7 +12,7 @@ setup_ssl() {
         # which historically had drift in its bootstrap flag names.
         local tmp; tmp=$(mktemp -d)
         if ! run_quiet git clone --depth 1 https://github.com/acmesh-official/acme.sh.git "${tmp}/acme.sh"; then
-            ui_err "Failed to clone acme.sh repository; check outbound HTTPS."
+            ui_err "acme.sh 仓库克隆失败，请检查出口 HTTPS。"
             rm -rf "${tmp}"
             return 1
         fi
@@ -23,14 +23,14 @@ setup_ssl() {
         rm -rf "${tmp}"
     fi
     if [[ ! -x /root/.acme.sh/acme.sh ]]; then
-        ui_err "acme.sh installation reported success but /root/.acme.sh/acme.sh is missing."
+        ui_err "acme.sh 安装显示成功，但 /root/.acme.sh/acme.sh 文件不存在。"
         return 1
     fi
     run /root/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-    ui_ok "acme.sh installed at /root/.acme.sh (auto-renewal via cron)"
+    ui_ok "acme.sh 已安装于 /root/.acme.sh（cron 自动续签）"
 
     if [[ "${EWO_LE_REQUEST}" != "yes" ]]; then
-        ui_info "Skipping Let's Encrypt issuance (will fall back to self-signed cert)."
+        ui_info "已跳过 Let's Encrypt 签发，回落到自签证书。"
         return 0
     fi
 
@@ -49,9 +49,9 @@ setup_ssl() {
             --key-file       /etc/ssl/ewomail/private/privkey.pem \
             --fullchain-file /etc/ssl/ewomail/fullchain.pem \
             --reloadcmd      "systemctl try-reload-or-restart nginx 2>/dev/null || true; systemctl try-reload-or-restart postfix 2>/dev/null || true; systemctl try-reload-or-restart dovecot 2>/dev/null || true"
-        ui_ok "Let's Encrypt certificate issued for ${EWO_MAIL_HOST}"
+        ui_ok "已为 ${EWO_MAIL_HOST} 签发 Let's Encrypt 证书"
     else
-        ui_warn "Could not obtain a Let's Encrypt certificate now (DNS or rate limit?)."
-        ui_warn "Self-signed cert is active. Re-issue from the SSL panel once DNS is correct."
+        ui_warn "暂时无法签发 LE 证书（DNS 未生效或被限流？）"
+        ui_warn "当前使用自签证书。DNS 生效后从 SSL 面板再签一次即可。"
     fi
 }

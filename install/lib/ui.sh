@@ -46,7 +46,7 @@ init_logging() {
     mkdir -p "$(dirname "${LOG_FILE}")"
     : > "${LOG_FILE}"
     chmod 600 "${LOG_FILE}"
-    ui_dim "Detailed log → ${LOG_FILE}"
+    ui_dim "详细日志 → ${LOG_FILE}"
 }
 
 log() {
@@ -59,8 +59,8 @@ run() {
         return 0
     else
         local rc=$?
-        ui_err "Command failed (rc=${rc}): $*"
-        ui_err "See last lines of ${LOG_FILE} for details."
+        ui_err "命令失败（退出码 ${rc}）：$*"
+        ui_err "详见 ${LOG_FILE} 的最后部分。"
         tail -n 20 "${LOG_FILE}" | sed 's/^/    /'
         return "$rc"
     fi
@@ -83,7 +83,7 @@ run_stream() {
         rc=${PIPESTATUS[0]}
     fi
     if (( rc != 0 )); then
-        ui_err "Command failed (rc=${rc}): $*"
+        ui_err "命令失败（退出码 ${rc}）：$*"
         return "$rc"
     fi
     return 0
@@ -91,25 +91,25 @@ run_stream() {
 
 on_error() {
     local rc=$?
-    ui_err "Installation aborted (exit ${rc}). Inspect ${LOG_FILE}."
+    ui_err "安装中断（退出码 ${rc}）。请查看 ${LOG_FILE}。"
     exit "$rc"
 }
 
 require_root() {
     if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
-        ui_err "This installer must be run as root."
+        ui_err "本安装器必须以 root 身份运行。"
         exit 1
     fi
 }
 
 confirm_proceed() {
     echo
-    printf '%sReady to install. Continue? [y/N]:%s ' "${UI_BOLD}" "${UI_RESET}"
+    printf '%s准备就绪，是否开始安装？[y/N]：%s ' "${UI_BOLD}" "${UI_RESET}"
     local ans
     read -r ans
     case "${ans,,}" in
         y|yes) ;;
-        *) ui_err "Aborted by user."; exit 1 ;;
+        *) ui_err "用户取消。"; exit 1 ;;
     esac
 }
 

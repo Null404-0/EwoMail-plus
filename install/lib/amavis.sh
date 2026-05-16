@@ -23,12 +23,12 @@ setup_amavis() {
     # Some Debian 12 installs leave clamav-daemon paused waiting for signatures;
     # kick a fresh signature pull in the background.
     if command -v freshclam >/dev/null; then
-        ui_info "Pulling initial ClamAV signatures (one-time ~300MB; can take 3-5 minutes)"
+        ui_info "首次拉取 ClamAV 病毒库（约 300MB，需 3-5 分钟）"
         run_quiet systemctl stop clamav-freshclam || true
         # Stream so the user can see the download progress.
-        run_stream freshclam || ui_warn "freshclam failed; clamav-daemon may take longer to be usable"
+        run_stream freshclam || ui_warn "freshclam 失败；clamav-daemon 启动后可能需要更长时间才可用"
         run_quiet systemctl start clamav-freshclam || true
     fi
 
-    ui_ok "Amavis + ClamAV + SpamAssassin configured; DKIM key generated"
+    ui_ok "Amavis + ClamAV + SpamAssassin 已配置；DKIM 密钥已生成"
 }

@@ -10,7 +10,7 @@ setup_firewall() {
     done
 
     if firewall-cmd --get-zones | grep -qw ewomail; then
-        ui_info "firewalld zone 'ewomail' already exists; reconfiguring"
+        ui_info "firewalld zone 'ewomail' 已存在，重新配置"
         run firewall-cmd --permanent --delete-zone=ewomail
         run firewall-cmd --reload
     fi
@@ -36,5 +36,5 @@ setup_firewall() {
         run firewall-cmd --permanent --zone=ewomail --add-interface="${iface}"
     fi
     run firewall-cmd --reload
-    ui_ok "firewalld zone 'ewomail' active (ports: ${ports[*]})"
+    ui_ok "firewalld zone 'ewomail' 已生效（端口：${ports[*]}）"
 }

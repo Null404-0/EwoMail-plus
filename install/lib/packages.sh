@@ -1,5 +1,29 @@
 # Installs system packages from Debian repositories only.
 
+setup_nginx_org_repo() {
+    # Add nginx.org's stable APT repository and pin so that `nginx` resolves
+    # to the upstream package, not Debian's 1.22.1.
+    install -d -m 0755 /etc/apt/keyrings
+    if [[ ! -f /etc/apt/keyrings/nginx.gpg ]]; then
+        if ! curl -fsSL https://nginx.org/keys/nginx_signing.key 2>>"${LOG_FILE}" \
+              | gpg --dearmor -o /etc/apt/keyrings/nginx.gpg 2>>"${LOG_FILE}"; then
+            ui_warn "无法获取 nginx.org 签名密钥，回退到 Debian 自带 nginx（1.22）。"
+            return 0
+        fi
+        chmod 0644 /etc/apt/keyrings/nginx.gpg
+    fi
+    cat > /etc/apt/sources.list.d/nginx-stable.list <<EOF
+deb [signed-by=/etc/apt/keyrings/nginx.gpg] https://nginx.org/packages/debian ${EWO_OS_CODENAME} nginx
+EOF
+    # Pin so Debian's nginx never wins; nginx.org's package is always preferred.
+    cat > /etc/apt/preferences.d/nginx-stable <<'EOF'
+Package: nginx
+Pin: origin nginx.org
+Pin-Priority: 900
+EOF
+    ui_ok "已配置 nginx.org stable 源（${EWO_OS_CODENAME}）"
+}
+
 install_apt_packages() {
     export DEBIAN_FRONTEND=noninteractive
     # Belt and braces: some packages still prompt at priority=high even with
@@ -7,7 +31,11 @@ install_apt_packages() {
     export DEBCONF_NONINTERACTIVE_SEEN=true
     export APT_LISTCHANGES_FRONTEND=none
 
-    ui_info "Refreshing package index"
+    # Pull nginx from nginx.org's stable channel — Debian 12 ships 1.22.1
+    # which is below the CVE-2026-42945 fix boundary (1.30.1 / 1.31.0).
+    setup_nginx_org_repo
+
+    ui_info "刷新 apt 软件源索引"
     run_stream apt-get update
 
     # Detect which PHP-FPM version is available in this Debian release.
@@ -20,14 +48,14 @@ install_apt_packages() {
         fi
     done
     if [[ -z "${candidate}" ]]; then
-        ui_err "No supported PHP-FPM package (8.2/8.3/8.4) found in this Debian release."
+        ui_err "未在此 Debian 版本中找到可用的 PHP-FPM（8.2/8.3/8.4）。"
         return 1
     fi
     EWO_PHP_VER="${candidate}"
     EWO_PHP_SOCK="/run/php/php${EWO_PHP_VER}-fpm-ewomail.sock"
     EWO_PHP_FPM_SERVICE="php${EWO_PHP_VER}-fpm"
     export EWO_PHP_VER EWO_PHP_SOCK EWO_PHP_FPM_SERVICE
-    ui_ok "PHP-FPM version: ${EWO_PHP_VER}"
+    ui_ok "PHP-FPM 版本：${EWO_PHP_VER}"
 
     # Pre-seed postfix so dpkg does not prompt.
     debconf-set-selections <<EOF
@@ -36,8 +64,8 @@ postfix postfix/mailname        string  ${EWO_DOMAIN}
 postfix postfix/destinations    string  \$myhostname, localhost.\$mydomain, localhost
 EOF
 
-    ui_info "Installing packages (this can take 5-10 minutes on a fresh VPS)"
-    ui_dim "Live apt output follows; each line is prefixed with │."
+    ui_info "正在安装软件包（首次安装 5-10 分钟）"
+    ui_dim "下面是 apt 实时输出，每行以 │ 开头。"
 
     local packages=(
         # The PHP admin panel shells out via \`sudo /ewomail/sbin/ewomail-helper\`;
@@ -66,7 +94,7 @@ EOF
     )
 
     run_stream apt-get install -y --no-install-recommends "${packages[@]}"
-    ui_ok "All packages installed"
+    ui_ok "所有软件包已安装"
 
     # Stop services we will reconfigure; we start them again at the end.
     # Debian renamed SpamAssassin's unit to spamd.service (was spamassassin).
@@ -92,10 +120,10 @@ enable_and_start_services() {
         # would still surface as a hard error via the next service that
         # depends on it.
         if ! systemctl list-unit-files --type=service | grep -q "^${svc}\.service"; then
-            ui_warn "Service unit '${svc}.service' not found; skipping."
+            ui_warn "未找到 service '${svc}.service'，已跳过。"
             continue
         fi
         run systemctl enable --now "${svc}"
     done
-    ui_ok "All services enabled & running"
+    ui_ok "所有服务已启动"
 }

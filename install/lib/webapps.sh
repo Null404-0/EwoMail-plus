@@ -11,7 +11,7 @@ _fetch() {
     local url="$1" dest="$2"
     log "Fetching ${url} → ${dest}"
     if ! curl -fSL --connect-timeout 15 --max-time 600 -o "${dest}" "${url}" >>"${LOG_FILE}" 2>&1; then
-        ui_warn "Failed to fetch ${url}; will retry once."
+        ui_warn "下载 ${url} 失败，重试一次。"
         sleep 3
         curl -fSL --connect-timeout 15 --max-time 600 -o "${dest}" "${url}" >>"${LOG_FILE}" 2>&1
     fi
@@ -57,9 +57,9 @@ install_webapps() {
         snappy_url=$(_latest_asset_url "the-djmaze/snappymail" '^snappymail-[0-9.]+[.]zip$' || true)
         if [[ -z "${snappy_url}" ]]; then
             snappy_url="https://github.com/the-djmaze/snappymail/releases/download/v${SNAPPYMAIL_PIN_VERSION}/snappymail-${SNAPPYMAIL_PIN_VERSION}.zip"
-            ui_info "GitHub API unreachable; falling back to pinned SnappyMail ${SNAPPYMAIL_PIN_VERSION}"
+            ui_info "GitHub API 不可达，回退到固定版本 SnappyMail ${SNAPPYMAIL_PIN_VERSION}"
         else
-            ui_info "SnappyMail asset: ${snappy_url}"
+            ui_info "SnappyMail 资源：${snappy_url}"
         fi
         _fetch "${snappy_url}" "${snappy_zip}"
         install -d -m 0755 /ewomail/www/snappymail
@@ -70,7 +70,7 @@ install_webapps() {
         if [[ ! -f /ewomail/www/snappymail/index.php ]]; then
             local inner; inner=$(find /ewomail/www/snappymail -maxdepth 2 -name 'index.php' -printf '%h\n' | head -1)
             if [[ -n "${inner}" && "${inner}" != "/ewomail/www/snappymail" ]]; then
-                ui_info "Flattening SnappyMail archive from ${inner}"
+                ui_info "展开 SnappyMail 嵌套目录：${inner}"
                 shopt -s dotglob
                 mv "${inner}"/* /ewomail/www/snappymail/
                 shopt -u dotglob
@@ -78,7 +78,7 @@ install_webapps() {
             fi
         fi
         if [[ ! -f /ewomail/www/snappymail/index.php ]]; then
-            ui_err "SnappyMail extraction did not produce index.php"
+            ui_err "SnappyMail 解压后未找到 index.php"
             return 1
         fi
         touch /ewomail/www/snappymail/.installed
@@ -91,9 +91,9 @@ install_webapps() {
         adminer_url=$(_latest_asset_url "vrana/adminer" '^adminer-[0-9.]+-mysql[.]php$' || true)
         if [[ -z "${adminer_url}" ]]; then
             adminer_url="https://github.com/vrana/adminer/releases/download/v${ADMINER_PIN_VERSION}/adminer-${ADMINER_PIN_VERSION}-mysql.php"
-            ui_info "GitHub API unreachable; falling back to pinned Adminer ${ADMINER_PIN_VERSION}"
+            ui_info "GitHub API 不可达，回退到固定版本 Adminer ${ADMINER_PIN_VERSION}"
         else
-            ui_info "Adminer asset: ${adminer_url}"
+            ui_info "Adminer 资源：${adminer_url}"
         fi
         _fetch "${adminer_url}" /ewomail/www/adminer/index.php
     fi
@@ -113,5 +113,5 @@ install_webapps() {
         find /ewomail/www/snappymail/data -type f -exec chmod 0640 {} +
     fi
 
-    ui_ok "Web applications installed under /ewomail/www"
+    ui_ok "Web 应用已安装到 /ewomail/www"
 }

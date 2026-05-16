@@ -52,7 +52,7 @@ main() {
     init_logging
     trap on_error ERR
 
-    ui_banner "EwoMail-plus  Installer"
+    ui_banner "EwoMail-plus 安装程序"
 
     precheck_os
     precheck_clean_machine
@@ -62,57 +62,58 @@ main() {
     prompt_admin_email
     prompt_db_admin_enabled
     prompt_request_letsencrypt
+    prompt_swap
 
     precheck_dns "${EWO_DOMAIN}"
     confirm_proceed
 
     generate_credentials
 
-    step "Installing system packages from Debian repositories"
+    step "安装系统软件包（Debian apt + nginx.org stable）"
     install_apt_packages
 
-    step "Configuring MariaDB"
+    step "配置 MariaDB"
     setup_mariadb
 
-    step "Configuring Postfix"
+    step "配置 Postfix"
     setup_postfix
 
-    step "Configuring Dovecot"
+    step "配置 Dovecot"
     setup_dovecot
 
-    step "Configuring Amavis + ClamAV + SpamAssassin + DKIM"
+    step "配置 Amavis + ClamAV + SpamAssassin + DKIM"
     setup_amavis
 
-    step "Configuring PHP-FPM"
+    step "配置 PHP-FPM"
     setup_php_fpm
 
-    step "Installing web applications (admin / SnappyMail / Adminer)"
+    step "安装 Web 应用（管理后台 / SnappyMail / Adminer）"
     install_webapps
 
-    step "Configuring Nginx"
+    step "配置 Nginx"
     setup_nginx
 
-    step "Initialising application database & admin account"
+    step "初始化业务数据库与管理员账号"
     init_application_db
 
-    step "Configuring fail2ban"
+    step "配置 fail2ban"
     setup_fail2ban
 
-    step "Configuring firewalld"
+    step "配置 firewalld 防火墙"
     setup_firewall
 
-    step "Installing acme.sh and setting up SSL"
+    step "安装 acme.sh 并申请 Let's Encrypt 证书"
     setup_ssl
 
-    step "Bringing all services online"
+    step "启动所有服务"
     enable_and_start_services
 
-    step "Writing credentials file"
+    step "写入凭据文件"
     write_credentials_file
 
     print_summary
 
-    ui_ok "Installation complete."
+    ui_ok "全部完成。"
 }
 
 main "$@"

@@ -31,14 +31,14 @@ generate_credentials() {
     export EWO_MYSQL_ROOT_PWD EWO_MYSQL_EWOMAIL_PWD EWO_ADMIN_PWD
     export EWO_ADMIN_PATH EWO_DB_PATH EWO_CODE_KEY
 
-    ui_ok "Generated random credentials and URL paths"
+    ui_ok "已生成随机密码与 URL 路径"
 }
 
 # Renders a template file by replacing every @@KEY@@ with the value of $KEY.
 # Whitespace-safe and works for binary-clean inputs.
 render_template() {
     local src="$1" dst="$2"
-    [[ -f "${src}" ]] || { ui_err "Template missing: ${src}"; return 1; }
+    [[ -f "${src}" ]] || { ui_err "模板文件缺失：${src}"; return 1; }
 
     local content
     content=$(cat "${src}")

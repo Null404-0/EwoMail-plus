@@ -9,6 +9,10 @@ setup_nginx() {
     install -d -m 0755 /etc/nginx/sites-available
     install -d -m 0755 /etc/nginx/sites-enabled
 
+    # nginx.org's package ships a default.conf that listens on :80 and would
+    # clash with our vhost; Debian's package doesn't. Remove it if present.
+    rm -f /etc/nginx/conf.d/default.conf
+
     render_template "${INSTALLER_DIR}/templates/nginx/nginx.conf"           /etc/nginx/nginx.conf
     render_template "${INSTALLER_DIR}/templates/nginx/snippets/php.conf"    /etc/nginx/snippets/ewomail-php.conf
     render_template "${INSTALLER_DIR}/templates/nginx/snippets/security.conf" /etc/nginx/snippets/ewomail-security.conf
@@ -31,5 +35,5 @@ setup_nginx() {
     fi
 
     run nginx -t
-    ui_ok "Nginx configured (vhost: ${EWO_MAIL_HOST})"
+    ui_ok "Nginx 已配置（vhost: ${EWO_MAIL_HOST}）"
 }

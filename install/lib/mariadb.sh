@@ -11,7 +11,7 @@ setup_mariadb() {
        || mysqladmin     -uroot ping --silent >/dev/null 2>&1; do
         tries=$(( tries + 1 ))
         if (( tries > 30 )); then
-            ui_err "MariaDB did not become reachable within 30s"
+            ui_err "MariaDB 在 30 秒内未就绪"
             systemctl status mariadb --no-pager >>"${LOG_FILE}" 2>&1 || true
             return 1
         fi
@@ -52,5 +52,5 @@ GRANT ALL PRIVILEGES ON ewomail.* TO 'ewomail'@'localhost';
 GRANT ALL PRIVILEGES ON ewomail.* TO 'ewomail'@'127.0.0.1';
 FLUSH PRIVILEGES;
 EOF
-    ui_ok "MariaDB ready, root and ewomail users configured"
+    ui_ok "MariaDB 就绪，root 与 ewomail 账号已配置"
 }

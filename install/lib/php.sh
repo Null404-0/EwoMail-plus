@@ -20,5 +20,5 @@ setup_php_fpm() {
         -e 's/^;\?expose_php\s*=.*/expose_php = Off/' \
         -e "s|^;\?date.timezone\s*=.*|date.timezone = UTC|" \
         "${fpm_ini}"
-    ui_ok "PHP-FPM pool installed at ${pool_dir}/ewomail.conf"
+    ui_ok "PHP-FPM pool 已安装：${pool_dir}/ewomail.conf"
 }

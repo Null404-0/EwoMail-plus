@@ -14,7 +14,7 @@ init_application_db() {
         run mysql -uroot ewomail < "${sql}"
         rm -f "${sql}"
     else
-        ui_warn "install.sql missing (already imported?). Skipping schema load."
+        ui_warn "install.sql 不存在（可能已导入过），跳过 schema 加载。"
     fi
 
     # Per-domain init.
@@ -75,5 +75,5 @@ EOF
     chmod 0440 /etc/sudoers.d/ewomail
     run visudo -cf /etc/sudoers.d/ewomail
 
-    ui_ok "Application DB initialised; admin login: admin / (see credentials file)"
+    ui_ok "业务数据库已初始化；管理员账号 admin（密码见凭据文件）"
 }
