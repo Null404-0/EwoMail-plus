@@ -97,11 +97,12 @@ EOF
     ui_ok "所有软件包已安装"
 
     # Stop services we will reconfigure; we start them again at the end.
-    # Debian renamed SpamAssassin's unit to spamd.service (was spamassassin).
+    # SpamAssassin's systemd unit on Debian 12 is spamassassin.service (the
+    # spamd name comes from the daemon binary, not the unit).
     # Use `systemctl cat` instead of parsing list-unit-files: the latter's
     # output format can include pager/color codes on some Debian images that
     # break our literal grep, leading to false negatives.
-    for svc in postfix dovecot amavis spamd clamav-daemon clamav-freshclam nginx \
+    for svc in postfix dovecot amavis spamassassin clamav-daemon clamav-freshclam nginx \
                "${EWO_PHP_FPM_SERVICE}" mariadb; do
         if systemctl cat "${svc}.service" >/dev/null 2>&1; then
             run_quiet systemctl stop "${svc}" || true
@@ -112,7 +113,7 @@ EOF
 enable_and_start_services() {
     local services=(
         mariadb "${EWO_PHP_FPM_SERVICE}"
-        postfix dovecot amavis spamd
+        postfix dovecot amavis spamassassin
         clamav-daemon clamav-freshclam
         nginx firewalld fail2ban
     )
