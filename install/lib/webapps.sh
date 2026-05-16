@@ -54,7 +54,7 @@ install_webapps() {
     local snappy_zip="/tmp/snappymail.zip"
     if [[ ! -d /ewomail/www/snappymail/.installed ]]; then
         local snappy_url
-        snappy_url=$(_latest_asset_url "the-djmaze/snappymail" '^snappymail-[0-9.]+\.zip$' || true)
+        snappy_url=$(_latest_asset_url "the-djmaze/snappymail" '^snappymail-[0-9.]+[.]zip$' || true)
         if [[ -z "${snappy_url}" ]]; then
             snappy_url="https://github.com/the-djmaze/snappymail/releases/download/v${SNAPPYMAIL_PIN_VERSION}/snappymail-${SNAPPYMAIL_PIN_VERSION}.zip"
             ui_info "GitHub API unreachable; falling back to pinned SnappyMail ${SNAPPYMAIL_PIN_VERSION}"
@@ -88,7 +88,7 @@ install_webapps() {
     install -d -m 0755 /ewomail/www/adminer
     if [[ ! -f /ewomail/www/adminer/index.php ]]; then
         local adminer_url
-        adminer_url=$(_latest_asset_url "vrana/adminer" '^adminer-[0-9.]+-mysql\.php$' || true)
+        adminer_url=$(_latest_asset_url "vrana/adminer" '^adminer-[0-9.]+-mysql[.]php$' || true)
         if [[ -z "${adminer_url}" ]]; then
             adminer_url="https://github.com/vrana/adminer/releases/download/v${ADMINER_PIN_VERSION}/adminer-${ADMINER_PIN_VERSION}-mysql.php"
             ui_info "GitHub API unreachable; falling back to pinned Adminer ${ADMINER_PIN_VERSION}"
