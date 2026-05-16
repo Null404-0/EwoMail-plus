@@ -3,7 +3,10 @@
 # Hostname & domains
 myhostname            = @@EWO_MAIL_HOST@@
 mydomain              = @@EWO_DOMAIN@@
-myorigin              = $myhostname
+# myorigin = $mydomain (not $myhostname) so outbound envelope is
+# user@example.com — the parent domain has the SPF record, mail.example.com
+# usually does not. Without this, your own server's SPF check fails.
+myorigin              = $mydomain
 mydestination         = $myhostname, localhost.$mydomain, localhost
 inet_protocols        = all
 inet_interfaces       = all

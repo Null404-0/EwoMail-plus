@@ -3,6 +3,21 @@
 setup_mariadb() {
     run systemctl start mariadb
 
+    # systemctl start returns once the unit is "active", but mariadb may need
+    # an extra moment before the local socket accepts queries. Poll for up to
+    # 30s — faster than guessing a fixed sleep on a slow VPS.
+    local tries=0
+    until mariadb-admin -uroot ping --silent >/dev/null 2>&1 \
+       || mysqladmin     -uroot ping --silent >/dev/null 2>&1; do
+        tries=$(( tries + 1 ))
+        if (( tries > 30 )); then
+            ui_err "MariaDB did not become reachable within 30s"
+            systemctl status mariadb --no-pager >>"${LOG_FILE}" 2>&1 || true
+            return 1
+        fi
+        sleep 1
+    done
+
     # Set root password and remove anonymous users / test DB. Use unix-socket
     # plugin first to ensure idempotent local root access.
     local sql_init

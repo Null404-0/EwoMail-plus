@@ -10,17 +10,18 @@ Rout::get('index', function () {
     $list = Helper::run(['cert-list']);
     $rows = [];
     if ($list['ok']) {
-        // Header line first, skip it.
+        // --listraw format: Main_Domain|KeyLength|SAN_Domains|CA|Created|Renew
+        // The first line is the header; skip it.
         $lines = preg_split('/\r?\n/', trim($list['out']));
         foreach ($lines as $i => $line) {
             if ($i === 0 || $line === '') continue;
-            $cols = preg_split('/\s+/', $line, 7);
-            if (count($cols) >= 3) {
+            $cols = explode('|', $line);
+            if (count($cols) >= 6) {
                 $rows[] = [
                     'domain'  => $cols[0],
-                    'ca'      => isset($cols[2]) ? $cols[2] : '',
-                    'created' => isset($cols[3]) ? $cols[3] : '',
-                    'renew'   => isset($cols[4]) ? $cols[4] : '',
+                    'ca'      => $cols[3],
+                    'created' => $cols[4],
+                    'renew'   => $cols[5],
                 ];
             }
         }

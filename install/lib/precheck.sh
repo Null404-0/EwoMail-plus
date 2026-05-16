@@ -86,7 +86,15 @@ prompt_domain() {
 
 prompt_admin_email() {
     local default_email="admin@${EWO_DOMAIN}"
-    prompt_default "Admin contact email (for Let's Encrypt notifications)" "${default_email}" EWO_ADMIN_EMAIL
+    while true; do
+        prompt_default "Admin contact email (for Let's Encrypt notifications)" "${default_email}" EWO_ADMIN_EMAIL
+        # Conservative check: keep characters that are SQL-safe to interpolate
+        # later (we use heredoc SQL in admin_init.sh).
+        if [[ "${EWO_ADMIN_EMAIL}" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+            break
+        fi
+        ui_warn "That doesn't look like a valid email address. Please try again."
+    done
     export EWO_ADMIN_EMAIL
 }
 

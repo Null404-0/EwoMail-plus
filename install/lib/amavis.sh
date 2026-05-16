@@ -5,11 +5,12 @@ setup_amavis() {
     # 50-user being the user override that we manage.
     render_template "${INSTALLER_DIR}/templates/amavis/50-user" /etc/amavis/conf.d/50-user
 
-    # DKIM key.
+    # DKIM key. Use openssl directly — the amavis binary name varies
+    # between Debian versions (amavisd / amavisd-new) and openssl is always
+    # present and well-defined.
     install -d -m 0750 -o amavis -g amavis /ewomail/dkim
     if [[ ! -f /ewomail/dkim/${EWO_DOMAIN}.pem ]]; then
-        amavisd-new genrsa "/ewomail/dkim/${EWO_DOMAIN}.pem" 2048 >>"${LOG_FILE}" 2>&1 || \
-            openssl genrsa -out "/ewomail/dkim/${EWO_DOMAIN}.pem" 2048 >>"${LOG_FILE}" 2>&1
+        openssl genrsa -out "/ewomail/dkim/${EWO_DOMAIN}.pem" 2048 >>"${LOG_FILE}" 2>&1
     fi
     chown amavis:amavis "/ewomail/dkim/${EWO_DOMAIN}.pem"
     chmod 0640 "/ewomail/dkim/${EWO_DOMAIN}.pem"

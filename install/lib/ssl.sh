@@ -32,13 +32,16 @@ setup_ssl() {
         -w /ewomail/www/default \
         --server letsencrypt \
         >>"${LOG_FILE}" 2>&1; then
+        # try-reload-or-restart starts a stopped unit or reloads a running one
+        # — important here because postfix/dovecot aren't started until the
+        # next step. `|| true` per command so a single failure doesn't abort.
         run /root/.acme.sh/acme.sh --install-cert -d "${EWO_MAIL_HOST}" \
             --key-file       /etc/ssl/ewomail/private/privkey.pem \
             --fullchain-file /etc/ssl/ewomail/fullchain.pem \
-            --reloadcmd      "systemctl reload nginx; systemctl reload postfix; systemctl reload dovecot"
+            --reloadcmd      "systemctl try-reload-or-restart nginx 2>/dev/null || true; systemctl try-reload-or-restart postfix 2>/dev/null || true; systemctl try-reload-or-restart dovecot 2>/dev/null || true"
         ui_ok "Let's Encrypt certificate issued for ${EWO_MAIL_HOST}"
     else
         ui_warn "Could not obtain a Let's Encrypt certificate now (DNS or rate limit?)."
-        ui_warn "Self-signed cert is active. Re-run from the panel once DNS is correct."
+        ui_warn "Self-signed cert is active. Re-issue from the SSL panel once DNS is correct."
     fi
 }
