@@ -8,7 +8,7 @@ install_apt_packages() {
     export APT_LISTCHANGES_FRONTEND=none
 
     ui_info "Refreshing package index"
-    run apt-get update
+    run_stream apt-get update
 
     # Detect which PHP-FPM version is available in this Debian release.
     # Debian 12 ships 8.2; Debian 13 ships 8.3 or 8.4 depending on freeze date.
@@ -36,7 +36,8 @@ postfix postfix/mailname        string  ${EWO_DOMAIN}
 postfix postfix/destinations    string  \$myhostname, localhost.\$mydomain, localhost
 EOF
 
-    ui_info "Installing packages (this can take 5-10 minutes)"
+    ui_info "Installing packages (this can take 5-10 minutes on a fresh VPS)"
+    ui_dim "Live apt output follows; each line is prefixed with │."
 
     local packages=(
         ca-certificates curl wget gnupg lsb-release unzip git
@@ -61,7 +62,7 @@ EOF
         firewalld fail2ban python3-systemd
     )
 
-    run apt-get install -y --no-install-recommends "${packages[@]}"
+    run_stream apt-get install -y --no-install-recommends "${packages[@]}"
     ui_ok "All packages installed"
 
     # Stop services we will reconfigure; we start them again at the end.

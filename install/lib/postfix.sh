@@ -54,9 +54,10 @@ setup_postfix() {
         chmod 600 /etc/ssl/ewomail/private/privkey.pem
     fi
     if [[ ! -f /etc/ssl/ewomail/dh.pem ]]; then
-        # 2048 bits is the FFDHE recommendation. Generation is slow on a
-        # cold VPS (30-60s); acceptable since this runs only once.
-        openssl dhparam -out /etc/ssl/ewomail/dh.pem 2048 >>"${LOG_FILE}" 2>&1
+        # 2048-bit FFDHE generation can take 30-90s on a cold VPS; stream
+        # the dots to the terminal so the user can see we're not stuck.
+        ui_info "Generating Diffie-Hellman parameters (2048-bit, takes ~1 minute)"
+        run_stream openssl dhparam -out /etc/ssl/ewomail/dh.pem 2048
         chmod 644 /etc/ssl/ewomail/dh.pem
     fi
 

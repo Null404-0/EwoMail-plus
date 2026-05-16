@@ -23,8 +23,10 @@ setup_amavis() {
     # Some Debian 12 installs leave clamav-daemon paused waiting for signatures;
     # kick a fresh signature pull in the background.
     if command -v freshclam >/dev/null; then
+        ui_info "Pulling initial ClamAV signatures (one-time ~300MB; can take 3-5 minutes)"
         run_quiet systemctl stop clamav-freshclam || true
-        run_quiet freshclam --quiet || true
+        # Stream so the user can see the download progress.
+        run_stream freshclam || ui_warn "freshclam failed; clamav-daemon may take longer to be usable"
         run_quiet systemctl start clamav-freshclam || true
     fi
 
