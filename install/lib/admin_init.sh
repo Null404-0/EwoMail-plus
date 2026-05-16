@@ -28,7 +28,7 @@ UPDATE i_mail_config SET value='smtp.${EWO_DOMAIN}'  WHERE name='smtp';
 UPDATE i_mail_config SET value='${EWO_DOMAIN}'       WHERE name='mydomain';
 UPDATE i_mail_config SET value='${EWO_MAIL_HOST}'    WHERE name='myhostname';
 
-UPDATE i_admin SET password = MD5('${EWO_ADMIN_PWD}') WHERE id=1;
+UPDATE i_admin SET password = MD5('${EWO_ADMIN_PWD}') WHERE aid=1;
 EOF
 
     # Menu entries for the new Server modules (Firewall/Nginx/SSL/Settings).

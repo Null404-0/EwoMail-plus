@@ -52,7 +52,7 @@ Rout::post('change-password', function () {
         E::error('Confirmation does not match.');
     }
     App::$db->query(
-        "UPDATE i_admin SET password='" . md5($new) . "' WHERE id=" . intval(Admin::$aid)
+        "UPDATE i_admin SET password='" . md5($new) . "' WHERE aid=" . intval(Admin::$aid)
     );
     E::success('Password changed. Log in again.', U('/Index/out'));
 });
