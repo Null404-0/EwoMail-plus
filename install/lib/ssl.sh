@@ -7,14 +7,24 @@ setup_ssl() {
     chown -R www-data:www-data /ewomail/www/default/.well-known
 
     if [[ ! -x /root/.acme.sh/acme.sh ]]; then
+        # Clone the repo (--depth 1 keeps it tiny) and run the in-tree
+        # installer. This is more predictable than piping get.acme.sh,
+        # which historically had drift in its bootstrap flag names.
         local tmp; tmp=$(mktemp -d)
-        if ! curl -fsSL https://get.acme.sh -o "${tmp}/install.sh" >>"${LOG_FILE}" 2>&1; then
-            ui_warn "Failed to fetch get.acme.sh from primary URL, trying mirror …"
-            curl -fsSL https://raw.githubusercontent.com/acmesh-official/acme.sh/master/acme.sh \
-                -o "${tmp}/install.sh" >>"${LOG_FILE}" 2>&1
+        if ! run_quiet git clone --depth 1 https://github.com/acmesh-official/acme.sh.git "${tmp}/acme.sh"; then
+            ui_err "Failed to clone acme.sh repository; check outbound HTTPS."
+            rm -rf "${tmp}"
+            return 1
         fi
-        run bash "${tmp}/install.sh" --install-online --home /root/.acme.sh --accountemail "${EWO_ADMIN_EMAIL}"
+        # acme.sh's installer auto-creates ~/.acme.sh/acme.sh and a cron entry.
+        run bash "${tmp}/acme.sh/acme.sh" --install \
+            --home /root/.acme.sh \
+            --accountemail "${EWO_ADMIN_EMAIL}"
         rm -rf "${tmp}"
+    fi
+    if [[ ! -x /root/.acme.sh/acme.sh ]]; then
+        ui_err "acme.sh installation reported success but /root/.acme.sh/acme.sh is missing."
+        return 1
     fi
     run /root/.acme.sh/acme.sh --set-default-ca --server letsencrypt
     ui_ok "acme.sh installed at /root/.acme.sh (auto-renewal via cron)"
