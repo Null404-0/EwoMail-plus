@@ -2,28 +2,28 @@
 <div class="admin">
     {if !$ok}
     <div class="alert alert-red" style="margin-bottom:10px;">
-        firewalld is not reachable. Make sure the service is running.
+        firewalld 不可用，请确认服务正在运行。
     </div>
     {/if}
 
     <div class="panel admin-panel">
-        <div class="panel-head"><strong>Open ports (zone: ewomail)</strong></div>
+        <div class="panel-head"><strong>已开放端口（zone: ewomail）</strong></div>
         <div class="padding">
             <form id="port-add-form" class="form-x" style="margin-bottom:10px">
                 <div class="form-group" style="margin:0;display:inline-block;">
-                    <input type="text" name="port" placeholder="e.g. 8000/tcp" class="input" style="width:200px" required>
-                    <button type="submit" class="button bg-main">Open port</button>
+                    <input type="text" name="port" placeholder="例如 8000/tcp" class="input" style="width:200px" required>
+                    <button type="submit" class="button bg-main">开放端口</button>
                 </div>
             </form>
             <table class="table table-hover">
-                <thead><tr><th>Port</th><th width="120">Action</th></tr></thead>
+                <thead><tr><th>端口</th><th width="120">操作</th></tr></thead>
                 <tbody>
                 {foreach from=$ports item=p}
                     <tr><td>{$p}</td>
-                        <td><a href="javascript:;" class="btn-port-del" data-port="{$p}">Close</a></td>
+                        <td><a href="javascript:;" class="btn-port-del" data-port="{$p}">关闭</a></td>
                     </tr>
                 {foreachelse}
-                    <tr><td colspan="2" align="center">No ports opened.</td></tr>
+                    <tr><td colspan="2" align="center">尚无开放端口</td></tr>
                 {/foreach}
                 </tbody>
             </table>
@@ -31,39 +31,38 @@
     </div>
 
     <div class="panel admin-panel" style="margin-top:14px">
-        <div class="panel-head"><strong>Block list (rich-rule reject)</strong></div>
+        <div class="panel-head"><strong>封禁列表（rich-rule reject）</strong></div>
         <div class="padding">
             <form id="block-form" class="form-x" style="margin-bottom:10px">
                 <div class="form-group" style="margin:0;display:inline-block;">
-                    <input type="text" name="ip" placeholder="e.g. 1.2.3.4" class="input" style="width:200px" required>
-                    <button type="submit" class="button bg-red">Block IP</button>
+                    <input type="text" name="ip" placeholder="例如 1.2.3.4" class="input" style="width:200px" required>
+                    <button type="submit" class="button bg-red">封禁 IP</button>
                 </div>
             </form>
             <table class="table table-hover">
-                <thead><tr><th>IP</th><th width="120">Action</th></tr></thead>
+                <thead><tr><th>IP</th><th width="120">操作</th></tr></thead>
                 <tbody>
                 {foreach from=$blocked item=ip}
                     <tr><td>{$ip}</td>
-                        <td><a href="javascript:;" class="btn-unblock" data-ip="{$ip}">Unblock</a></td>
+                        <td><a href="javascript:;" class="btn-unblock" data-ip="{$ip}">解封</a></td>
                     </tr>
                 {foreachelse}
-                    <tr><td colspan="2" align="center">No blocked IPs.</td></tr>
+                    <tr><td colspan="2" align="center">尚无封禁 IP</td></tr>
                 {/foreach}
                 </tbody>
             </table>
         </div>
     </div>
 
-    <details style="margin-top:14px"><summary>Raw firewall-cmd --list-all</summary>
+    <details style="margin-top:14px"><summary>原始 firewall-cmd --list-all 输出</summary>
         <pre style="background:#222;color:#eee;padding:10px;overflow:auto">{$raw|escape}</pre>
     </details>
 </div>
 
 <script>
 $(function () {
-    // Framework routes form actions to Rout::put when data contains
-    // _method=put; otherwise they fall through to Rout::get which does
-    // not exist for these endpoints.
+    // 框架通过 _method=put 字段把 POST 路由到 Rout::put；不带就会落到 get
+    // 路由，这些 action 没有 GET 处理器会 404。
     function ewoPost(action, data, reloadOnOk) {
         if (typeof data === 'string') {
             data += (data ? '&' : '') + '_method=put';
@@ -71,14 +70,14 @@ $(function () {
             data = data || {};
             data._method = 'put';
         }
-        ajaxPost('{U("/Firewall/")}' + action, data, function (json) {
+        ajaxPost('{U("/Firewall")}/' + action, data, function (json) {
             if (json.status && reloadOnOk !== false) location.reload();
         });
     }
     $('#port-add-form').on('submit', function (e) { e.preventDefault(); ewoPost('port-add', $(this).serialize()); });
     $('#block-form').on('submit',    function (e) { e.preventDefault(); ewoPost('block',    $(this).serialize()); });
     $(document).on('click', '.btn-port-del', function () {
-        if (!confirm('Close ' + $(this).data('port') + '?')) return;
+        if (!confirm('关闭端口 ' + $(this).data('port') + ' ？')) return;
         ewoPost('port-del', { port: $(this).data('port') });
     });
     $(document).on('click', '.btn-unblock', function () {

@@ -1,47 +1,47 @@
 {include file="$HOME/header.html"}
 <div class="admin">
     <div class="panel admin-panel">
-        <div class="panel-head"><strong>Current certificate</strong></div>
+        <div class="panel-head"><strong>当前证书</strong></div>
         <div class="padding">
             {if $live}
-                <p><strong>File:</strong> {$live.path}</p>
-                <p><strong>Last update:</strong> {$live.mtime}</p>
+                <p><strong>文件：</strong>{$live.path}</p>
+                <p><strong>最近更新：</strong>{$live.mtime}</p>
                 <pre style="background:#f5f5f5;padding:8px">{$live.info|escape}</pre>
             {else}
-                <em>No cert deployed yet.</em>
+                <em>尚未部署证书。</em>
             {/if}
         </div>
     </div>
 
     <div class="panel admin-panel" style="margin-top:14px">
-        <div class="panel-head"><strong>Issue / renew via acme.sh (Let's Encrypt)</strong></div>
+        <div class="panel-head"><strong>通过 acme.sh 申请 / 续签（Let's Encrypt）</strong></div>
         <div class="padding">
             <form id="issue-form" class="form-x" style="margin-bottom:10px">
                 <div class="form-group" style="margin:0;display:inline-block;">
-                    <label>FQDN:</label>
+                    <label>域名：</label>
                     <input type="text" name="domain" class="input" placeholder="{$mail_host}" value="{$mail_host}" style="width:280px" required>
-                    <button type="submit" class="button bg-main">Issue</button>
-                    <em style="color:#888">Requires DNS A record to point here and port 80 reachable.</em>
+                    <button type="submit" class="button bg-main">申请</button>
+                    <em style="color:#888">需要 DNS A 记录已指向本机，且端口 80 可达。</em>
                 </div>
             </form>
 
             <table class="table table-hover">
-                <thead><tr><th>Domain</th><th>CA</th><th>Created</th><th>Next renew</th><th width="200">Action</th></tr></thead>
+                <thead><tr><th>域名</th><th>CA</th><th>创建时间</th><th>下次续签</th><th width="200">操作</th></tr></thead>
                 <tbody>
                 {foreach from=$rows item=r}
                     <tr>
                         <td>{$r.domain}</td><td>{$r.ca}</td><td>{$r.created}</td><td>{$r.renew}</td>
                         <td>
-                            <a href="javascript:;" class="button button-little border-blue   btn-renew"   data-d="{$r.domain}">Renew</a>
-                            <a href="javascript:;" class="button button-little border-green  btn-install" data-d="{$r.domain}">Install</a>
+                            <a href="javascript:;" class="button button-little border-blue   btn-renew"   data-d="{$r.domain}">续签</a>
+                            <a href="javascript:;" class="button button-little border-green  btn-install" data-d="{$r.domain}">安装</a>
                         </td>
                     </tr>
                 {foreachelse}
-                    <tr><td colspan="5" align="center">No certificates yet.</td></tr>
+                    <tr><td colspan="5" align="center">尚无证书。</td></tr>
                 {/foreach}
                 </tbody>
             </table>
-            <p style="margin-top:8px;color:#888">acme.sh auto-renews every 60 days via cron. Use "Install" after an out-of-band renewal to push the new cert into Postfix/Dovecot/Nginx.</p>
+            <p style="margin-top:8px;color:#888">acme.sh 通过 cron 每 60 天自动续签。如通过其他方式手动续签了，再点「安装」把新证书写入 Postfix/Dovecot/Nginx。</p>
         </div>
     </div>
 </div>
@@ -51,7 +51,7 @@ $(function () {
     function p(action, data, reload) {
         if (typeof data === 'string') data += (data ? '&' : '') + '_method=put';
         else { data = data || {}; data._method = 'put'; }
-        ajaxPost('{U("/Cert/")}' + action, data, function (j) { if (j.status && reload !== false) location.reload(); });
+        ajaxPost('{U("/Cert")}/' + action, data, function (j) { if (j.status && reload !== false) location.reload(); });
     }
     $('#issue-form').on('submit', function (e) { e.preventDefault(); p('issue', $(this).serialize(), false); });
     $(document).on('click', '.btn-renew',   function () { p('renew',   { domain: $(this).data('d') }, false); });

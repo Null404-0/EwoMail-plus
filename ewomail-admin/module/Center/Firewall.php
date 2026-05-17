@@ -5,7 +5,7 @@
 if (!defined('PATH')) exit;
 
 Rout::get('index', function () {
-    Admin::setMenu(301, 'Firewall');
+    Admin::setMenu(301, '防火墙');
 
     $list = Helper::run(['fw-list']);
 
@@ -35,33 +35,33 @@ Rout::get('index', function () {
 
 Rout::put('port-add', function () {
     $val = trim(ipost('port'));
-    if (!Helper::validatePortProto($val)) E::error('Format: 1234/tcp or 1234/udp');
+    if (!Helper::validatePortProto($val)) E::error('格式：1234/tcp 或 1234/udp');
     $r = Helper::run(['fw-add', $val]);
-    $r['ok'] ? E::success('Port opened: ' . $val) : E::error('Failed: ' . $r['out']);
+    $r['ok'] ? E::success('端口已开放：' . $val) : E::error('失败：' . $r['out']);
 });
 
 Rout::put('port-del', function () {
     $val = trim(ipost('port'));
-    if (!Helper::validatePortProto($val)) E::error('Format: 1234/tcp or 1234/udp');
+    if (!Helper::validatePortProto($val)) E::error('格式：1234/tcp 或 1234/udp');
     $r = Helper::run(['fw-del', $val]);
-    $r['ok'] ? E::success('Port closed: ' . $val) : E::error('Failed: ' . $r['out']);
+    $r['ok'] ? E::success('端口已关闭：' . $val) : E::error('失败：' . $r['out']);
 });
 
 Rout::put('block', function () {
     $ip = trim(ipost('ip'));
-    if (!Helper::validateIPv4($ip)) E::error('Invalid IPv4');
+    if (!Helper::validateIPv4($ip)) E::error('IP 格式无效');
     $r = Helper::run(['fw-block', $ip]);
-    $r['ok'] ? E::success('Blocked: ' . $ip) : E::error('Failed: ' . $r['out']);
+    $r['ok'] ? E::success('已封禁：' . $ip) : E::error('失败：' . $r['out']);
 });
 
 Rout::put('unblock', function () {
     $ip = trim(ipost('ip'));
-    if (!Helper::validateIPv4($ip)) E::error('Invalid IPv4');
+    if (!Helper::validateIPv4($ip)) E::error('IP 格式无效');
     $r = Helper::run(['fw-unblock', $ip]);
-    $r['ok'] ? E::success('Unblocked: ' . $ip) : E::error('Failed: ' . $r['out']);
+    $r['ok'] ? E::success('已解封：' . $ip) : E::error('失败：' . $r['out']);
 });
 
 Rout::put('reload', function () {
     $r = Helper::run(['fw-reload']);
-    $r['ok'] ? E::success('Reloaded') : E::error($r['out']);
+    $r['ok'] ? E::success('已重载') : E::error($r['out']);
 });

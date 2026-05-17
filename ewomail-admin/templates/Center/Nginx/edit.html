@@ -1,16 +1,16 @@
 {include file="$HOME/header.html"}
 <div class="admin">
     <div class="panel admin-panel">
-        <div class="panel-head"><strong>Edit: {$name}</strong>
-            <a href="{U('Nginx/index')}" style="float:right">&laquo; back</a>
+        <div class="panel-head"><strong>编辑：{$name}</strong>
+            <a href="{U('Nginx/index')}" style="float:right">&laquo; 返回</a>
         </div>
         <div class="padding">
             <form id="edit-form" class="form-x">
                 <input type="hidden" name="name" value="{$name}">
                 <textarea name="content" rows="28" style="width:100%;font-family:monospace;font-size:13px">{$content|escape}</textarea>
                 <div style="margin-top:10px">
-                    <button type="submit" class="button bg-main">Save &amp; reload</button>
-                    <em style="color:#888">nginx -t runs automatically; rollback on failure.</em>
+                    <button type="submit" class="button bg-main">保存并重载</button>
+                    <em style="color:#888">保存后自动执行 nginx -t；失败会回滚到上一版本。</em>
                 </div>
             </form>
         </div>

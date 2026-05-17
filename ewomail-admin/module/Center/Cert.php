@@ -5,7 +5,7 @@
 if (!defined('PATH')) exit;
 
 Rout::get('index', function () {
-    Admin::setMenu(303, 'SSL');
+    Admin::setMenu(303, 'SSL证书');
 
     $list = Helper::run(['cert-list']);
     $rows = [];
@@ -49,21 +49,21 @@ Rout::get('index', function () {
 
 Rout::put('issue', function () {
     $d = trim(ipost('domain'));
-    if (!Helper::validateFqdn($d)) E::error('Invalid FQDN');
+    if (!Helper::validateFqdn($d)) E::error('域名格式无效');
     $r = Helper::run(['cert-issue', $d]);
-    $r['ok'] ? E::success('Issued; click "Install" to deploy.') : E::error('acme.sh: ' . $r['out']);
+    $r['ok'] ? E::success('已签发，请点击「安装」部署到 Nginx/Postfix/Dovecot。') : E::error('acme.sh: ' . $r['out']);
 });
 
 Rout::put('renew', function () {
     $d = trim(ipost('domain'));
-    if (!Helper::validateFqdn($d)) E::error('Invalid FQDN');
+    if (!Helper::validateFqdn($d)) E::error('域名格式无效');
     $r = Helper::run(['cert-renew', $d]);
-    $r['ok'] ? E::success('Renewed.') : E::error('acme.sh: ' . $r['out']);
+    $r['ok'] ? E::success('已续签。') : E::error('acme.sh: ' . $r['out']);
 });
 
 Rout::put('install', function () {
     $d = trim(ipost('domain'));
-    if (!Helper::validateFqdn($d)) E::error('Invalid FQDN');
+    if (!Helper::validateFqdn($d)) E::error('域名格式无效');
     $r = Helper::run(['cert-install', $d]);
-    $r['ok'] ? E::success('Installed; services reloaded.') : E::error($r['out']);
+    $r['ok'] ? E::success('已部署，相关服务已重载。') : E::error($r['out']);
 });

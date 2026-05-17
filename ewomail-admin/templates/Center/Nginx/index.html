@@ -2,37 +2,37 @@
 <div class="admin">
     <div class="panel admin-panel">
         <div class="panel-head">
-            <strong>Nginx vhosts (/etc/nginx/sites-available)</strong>
+            <strong>Nginx 站点（/etc/nginx/sites-available）</strong>
             <span style="float:right">
-                <a href="javascript:;" id="btn-test" class="button button-small bg-blue">nginx -t</a>
-                <a href="javascript:;" id="btn-reload" class="button button-small bg-main">Reload</a>
+                <a href="javascript:;" id="btn-test" class="button button-small bg-blue">语法检查</a>
+                <a href="javascript:;" id="btn-reload" class="button button-small bg-main">重载</a>
             </span>
         </div>
         <div class="padding">
             {if !$test_ok}
             <div class="alert alert-red" style="margin-bottom:10px;">
-                <strong>nginx -t failed:</strong><br>
+                <strong>nginx -t 检查失败：</strong><br>
                 <pre style="white-space:pre-wrap;margin:0">{$test_out|escape}</pre>
             </div>
             {/if}
             <table class="table table-hover">
-                <thead><tr><th>Site</th><th width="120">Status</th><th width="240">Action</th></tr></thead>
+                <thead><tr><th>站点</th><th width="120">状态</th><th width="240">操作</th></tr></thead>
                 <tbody>
                 {foreach from=$sites item=s}
                     <tr>
                         <td>{$s.name}</td>
-                        <td>{if $s.enabled}<span style="color:#2e7d32">enabled</span>{else}<span style="color:#888">disabled</span>{/if}</td>
+                        <td>{if $s.enabled}<span style="color:#2e7d32">已启用</span>{else}<span style="color:#888">未启用</span>{/if}</td>
                         <td>
-                            <a class="button button-little border-blue" href="{U('Nginx/edit',"name={$s.name}")}">Edit</a>
+                            <a class="button button-little border-blue" href="{U('Nginx/edit',"name={$s.name}")}">编辑</a>
                             {if $s.enabled}
-                              <a class="button button-little border-yellow btn-toggle" href="javascript:;" data-act="disable" data-name="{$s.name}">Disable</a>
+                              <a class="button button-little border-yellow btn-toggle" href="javascript:;" data-act="disable" data-name="{$s.name}">停用</a>
                             {else}
-                              <a class="button button-little border-green btn-toggle"  href="javascript:;" data-act="enable"  data-name="{$s.name}">Enable</a>
+                              <a class="button button-little border-green btn-toggle"  href="javascript:;" data-act="enable"  data-name="{$s.name}">启用</a>
                             {/if}
                         </td>
                     </tr>
                 {foreachelse}
-                    <tr><td colspan="3" align="center">No vhost files.</td></tr>
+                    <tr><td colspan="3" align="center">尚无站点文件</td></tr>
                 {/foreach}
                 </tbody>
             </table>
@@ -46,7 +46,7 @@ $(function () {
         data = data || {};
         if (typeof data === 'string') data += (data ? '&' : '') + '_method=put';
         else data._method = 'put';
-        ajaxPost('{U("/Nginx/")}' + action, data, function (j) { if (j.status && reload !== false) location.reload(); });
+        ajaxPost('{U("/Nginx")}/' + action, data, function (j) { if (j.status && reload !== false) location.reload(); });
     }
     $('#btn-test').on('click',   function () { p('test', {}, false); });
     $('#btn-reload').on('click', function () { p('reload', {}, false); });

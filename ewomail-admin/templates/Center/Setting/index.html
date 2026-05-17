@@ -1,37 +1,37 @@
 {include file="$HOME/header.html"}
 <div class="admin">
     <div class="panel admin-panel">
-        <div class="panel-head"><strong>Public addresses</strong></div>
+        <div class="panel-head"><strong>访问地址</strong></div>
         <div class="padding">
             <table class="table">
-                <tr><td width="160">Mail host</td><td>{$mail_host}</td></tr>
-                <tr><td>Public IP</td><td>{$public_ip}</td></tr>
-                <tr><td>Webmail</td><td><a href="https://{$mail_host}/" target="_blank">https://{$mail_host}/</a></td></tr>
-                <tr><td>Admin URL</td><td>https://{$mail_host}/<strong>{$admin_path}</strong>/ &nbsp;
-                    <a href="javascript:;" id="rotate-admin" class="button button-little border-yellow">Rotate</a></td></tr>
-                <tr><td>Adminer URL</td><td>
+                <tr><td width="160">邮件主机</td><td>{$mail_host}</td></tr>
+                <tr><td>公网 IP</td><td>{$public_ip}</td></tr>
+                <tr><td>网页邮件</td><td><a href="https://{$mail_host}/" target="_blank">https://{$mail_host}/</a></td></tr>
+                <tr><td>管理后台</td><td>https://{$mail_host}/<strong>{$admin_path}</strong>/ &nbsp;
+                    <a href="javascript:;" id="rotate-admin" class="button button-little border-yellow">更换路径</a></td></tr>
+                <tr><td>数据库管理</td><td>
                     https://{$mail_host}/<strong>{$db_path}</strong>/ &nbsp;
-                    <a href="javascript:;" id="rotate-db" class="button button-little border-yellow">Rotate</a>
+                    <a href="javascript:;" id="rotate-db" class="button button-little border-yellow">更换路径</a>
                     <label style="margin-left:14px">
-                        <input type="checkbox" id="toggle-db" {if $db_enabled}checked{/if}> enabled
+                        <input type="checkbox" id="toggle-db" {if $db_enabled}checked{/if}> 启用
                     </label>
                 </td></tr>
             </table>
-            <p style="color:#888">Rotating an URL path takes effect immediately; bookmark the new URL or you will lose access.</p>
+            <p style="color:#888">更换 URL 路径立即生效；务必先收藏新地址，否则将无法访问。</p>
         </div>
     </div>
 
     <div class="panel admin-panel" style="margin-top:14px">
-        <div class="panel-head"><strong>Change admin password</strong></div>
+        <div class="panel-head"><strong>修改管理员密码</strong></div>
         <div class="padding">
             <form id="pwd-form" class="form-x" style="max-width:480px">
-                <div class="form-group"><label>Current password</label>
+                <div class="form-group"><label>当前密码</label>
                     <input type="password" name="current" class="input" required></div>
-                <div class="form-group"><label>New password (≥ 12 chars)</label>
+                <div class="form-group"><label>新密码（至少 12 位）</label>
                     <input type="password" name="new" class="input" required></div>
-                <div class="form-group"><label>Confirm new password</label>
+                <div class="form-group"><label>再次输入新密码</label>
                     <input type="password" name="confirm" class="input" required></div>
-                <button type="submit" class="button bg-main">Update</button>
+                <button type="submit" class="button bg-main">提交</button>
             </form>
         </div>
     </div>
@@ -43,11 +43,11 @@ $(function () {
         data = data || {};
         if (typeof data === 'string') data += (data ? '&' : '') + '_method=put';
         else data._method = 'put';
-        ajaxPost('{U("/Setting/")}' + action, data, cb);
+        ajaxPost('{U("/Setting")}/' + action, data, cb);
     }
 
     $('#rotate-admin').on('click', function () {
-        if (!confirm('Rotate the admin path? The browser will be redirected to the new URL after a moment.')) return;
+        if (!confirm('确认更换管理路径？浏览器会自动跳到新 URL。')) return;
         p('rotate-admin-path', {}, function (j) {
             if (j.status && j.data && j.data.path) {
                 setTimeout(function () { location.href = '/' + j.data.path + '/'; }, 1500);
@@ -55,7 +55,7 @@ $(function () {
         });
     });
     $('#rotate-db').on('click', function () {
-        if (!confirm('Rotate the db path?')) return;
+        if (!confirm('确认更换数据库路径？')) return;
         p('rotate-db-path', {}, function () { setTimeout(function () { location.reload(); }, 1500); });
     });
     $('#toggle-db').on('change', function () {

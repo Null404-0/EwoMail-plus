@@ -265,11 +265,17 @@ CREATE TABLE IF NOT EXISTS i_panel_setting (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO i_admin_menu (menu_id, mark, lang, url, top_id, edit, del, edit_id, sort) VALUES
-  (300, 'Server',   'Server',   '',          0,   0, 0, 0, 50),
-  (301, 'Firewall', 'Firewall', '/Firewall', 300, 1, 1, 0, 51),
-  (302, 'Nginx',    'Nginx',    '/Nginx',    300, 1, 0, 0, 52),
-  (303, 'SSL',      'SSL',      '/Cert',     300, 1, 0, 0, 53),
-  (304, 'Settings', 'Settings', '/Setting',  300, 1, 0, 0, 54);
+  (300, '服务器',  '服务器',   '',          0,   0, 0, 0, 50),
+  (301, '防火墙',  '防火墙',   '/Firewall', 300, 1, 1, 0, 51),
+  (302, 'Nginx',  'Nginx',     '/Nginx',    300, 1, 0, 0, 52),
+  (303, 'SSL证书','SSL证书',   '/Cert',     300, 1, 0, 0, 53),
+  (304, '面板设置','面板设置', '/Setting',  300, 1, 0, 0, 54);
+-- Also normalise rows from earlier installs that still have English values.
+UPDATE i_admin_menu SET mark='服务器',   lang='服务器'    WHERE menu_id=300 AND lang IN ('Server','服务器');
+UPDATE i_admin_menu SET mark='防火墙',   lang='防火墙'    WHERE menu_id=301 AND lang IN ('Firewall','防火墙');
+UPDATE i_admin_menu SET mark='Nginx',    lang='Nginx'     WHERE menu_id=302;
+UPDATE i_admin_menu SET mark='SSL证书',  lang='SSL证书'   WHERE menu_id=303 AND lang IN ('SSL','SSL证书');
+UPDATE i_admin_menu SET mark='面板设置', lang='面板设置'  WHERE menu_id=304 AND lang IN ('Settings','面板设置');
 EOF
 ui_ok "DB 增量已应用"
 

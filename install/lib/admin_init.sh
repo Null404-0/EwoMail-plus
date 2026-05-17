@@ -36,11 +36,11 @@ EOF
     # as the `mark` column directly when no L() lookup is present.
     mysql -uroot ewomail <<EOF
 INSERT IGNORE INTO i_admin_menu (menu_id, mark, lang, url, top_id, edit, del, edit_id, sort) VALUES
-  (300, 'Server',   'Server',   '',         0,   0, 0, 0, 50),
-  (301, 'Firewall', 'Firewall', '/Firewall', 300, 1, 1, 0, 51),
-  (302, 'Nginx',    'Nginx',    '/Nginx',    300, 1, 0, 0, 52),
-  (303, 'SSL',      'SSL',      '/Cert',     300, 1, 0, 0, 53),
-  (304, 'Settings', 'Settings', '/Setting',  300, 1, 0, 0, 54);
+  (300, '服务器',  '服务器',   '',          0,   0, 0, 0, 50),
+  (301, '防火墙',  '防火墙',   '/Firewall', 300, 1, 1, 0, 51),
+  (302, 'Nginx',  'Nginx',     '/Nginx',    300, 1, 0, 0, 52),
+  (303, 'SSL证书','SSL证书',   '/Cert',     300, 1, 0, 0, 53),
+  (304, '面板设置','面板设置', '/Setting',  300, 1, 0, 0, 54);
 EOF
 
     # Persist runtime settings the panel reads back (URL paths, DB toggle).
