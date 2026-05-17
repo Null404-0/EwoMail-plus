@@ -185,9 +185,10 @@ case "${cmd}" in
         /root/.acme.sh/acme.sh --renew -d "$1" --force
         ;;
     cert-list)
-        # --listraw outputs pipe-delimited stable columns:
+        # --listraw modifies --list to use stable pipe-delimited columns:
         #   Main_Domain|KeyLength|SAN_Domains|CA|Created|Renew
-        /root/.acme.sh/acme.sh --listraw
+        # Running `--listraw` alone just prints the help text — must combine.
+        /root/.acme.sh/acme.sh --list --listraw
         ;;
     cert-current)
         # Subject + Not After + epoch mtime of the deployed cert. PHP can't
