@@ -47,21 +47,21 @@ Rout::get('index', function () {
     Tp::display();
 });
 
-Rout::post('issue', function () {
+Rout::put('issue', function () {
     $d = trim(ipost('domain'));
     if (!Helper::validateFqdn($d)) E::error('Invalid FQDN');
     $r = Helper::run(['cert-issue', $d]);
     $r['ok'] ? E::success('Issued; click "Install" to deploy.') : E::error('acme.sh: ' . $r['out']);
 });
 
-Rout::post('renew', function () {
+Rout::put('renew', function () {
     $d = trim(ipost('domain'));
     if (!Helper::validateFqdn($d)) E::error('Invalid FQDN');
     $r = Helper::run(['cert-renew', $d]);
     $r['ok'] ? E::success('Renewed.') : E::error('acme.sh: ' . $r['out']);
 });
 
-Rout::post('install', function () {
+Rout::put('install', function () {
     $d = trim(ipost('domain'));
     if (!Helper::validateFqdn($d)) E::error('Invalid FQDN');
     $r = Helper::run(['cert-install', $d]);

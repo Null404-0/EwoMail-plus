@@ -45,7 +45,7 @@ Rout::get('edit', function () {
     Tp::display();
 });
 
-Rout::post('save', function () {
+Rout::put('save', function () {
     $name    = trim(ipost('name'));
     $content = ipost('content');
     if (!Helper::validateSiteName($name)) E::error('Invalid site name');
@@ -55,24 +55,24 @@ Rout::post('save', function () {
     $r['ok'] ? E::success('Saved & reloaded') : E::error('nginx-t failed: ' . $r['out']);
 });
 
-Rout::post('reload', function () {
+Rout::put('reload', function () {
     $r = Helper::run(['nginx-reload']);
     $r['ok'] ? E::success('Reloaded') : E::error($r['out']);
 });
 
-Rout::post('test', function () {
+Rout::put('test', function () {
     $r = Helper::run(['nginx-test']);
     $r['ok'] ? E::success($r['out'] ?: 'syntax OK') : E::error($r['out']);
 });
 
-Rout::post('enable', function () {
+Rout::put('enable', function () {
     $name = trim(ipost('name'));
     if (!Helper::validateSiteName($name)) E::error('Invalid site name');
     $r = Helper::run(['nginx-enable', $name]);
     $r['ok'] ? E::success('Enabled: ' . $name) : E::error($r['out']);
 });
 
-Rout::post('disable', function () {
+Rout::put('disable', function () {
     $name = trim(ipost('name'));
     if (!Helper::validateSiteName($name)) E::error('Invalid site name');
     $r = Helper::run(['nginx-disable', $name]);

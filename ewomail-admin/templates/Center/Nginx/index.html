@@ -43,6 +43,9 @@
 <script>
 $(function () {
     function p(action, data, reload) {
+        data = data || {};
+        if (typeof data === 'string') data += (data ? '&' : '') + '_method=put';
+        else data._method = 'put';
         ajaxPost('{U("/Nginx/")}' + action, data, function (j) { if (j.status && reload !== false) location.reload(); });
     }
     $('#btn-test').on('click',   function () { p('test', {}, false); });

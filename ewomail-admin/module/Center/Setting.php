@@ -17,27 +17,27 @@ Rout::get('index', function () {
     Tp::display();
 });
 
-Rout::post('rotate-admin-path', function () {
+Rout::put('rotate-admin-path', function () {
     $r = Helper::run(['setting-rotate-admin-path']);
     if (!$r['ok']) E::error($r['out']);
     $new = trim($r['out']);
     E::success('New admin path: /' . $new . '/  — log in again on the new URL.', '', ['path' => $new]);
 });
 
-Rout::post('rotate-db-path', function () {
+Rout::put('rotate-db-path', function () {
     $r = Helper::run(['setting-rotate-db-path']);
     if (!$r['ok']) E::error($r['out']);
     $new = trim($r['out']);
     E::success('New db path: /' . $new . '/', '', ['path' => $new]);
 });
 
-Rout::post('toggle-db', function () {
+Rout::put('toggle-db', function () {
     $val = ipost('state') === 'on' ? 'on' : 'off';
     $r = Helper::run(['setting-toggle-db', $val]);
     $r['ok'] ? E::success('Adminer is now ' . $val) : E::error($r['out']);
 });
 
-Rout::post('change-password', function () {
+Rout::put('change-password', function () {
     $cur = (string) ipost('current');
     $new = (string) ipost('new');
     $confirm = (string) ipost('confirm');

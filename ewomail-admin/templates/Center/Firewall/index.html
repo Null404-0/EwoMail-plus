@@ -61,7 +61,16 @@
 
 <script>
 $(function () {
+    // Framework routes form actions to Rout::put when data contains
+    // _method=put; otherwise they fall through to Rout::get which does
+    // not exist for these endpoints.
     function ewoPost(action, data, reloadOnOk) {
+        if (typeof data === 'string') {
+            data += (data ? '&' : '') + '_method=put';
+        } else {
+            data = data || {};
+            data._method = 'put';
+        }
         ajaxPost('{U("/Firewall/")}' + action, data, function (json) {
             if (json.status && reloadOnOk !== false) location.reload();
         });

@@ -39,7 +39,12 @@
 
 <script>
 $(function () {
-    function p(action, data, cb) { ajaxPost('{U("/Setting/")}' + action, data || {}, cb); }
+    function p(action, data, cb) {
+        data = data || {};
+        if (typeof data === 'string') data += (data ? '&' : '') + '_method=put';
+        else data._method = 'put';
+        ajaxPost('{U("/Setting/")}' + action, data, cb);
+    }
 
     $('#rotate-admin').on('click', function () {
         if (!confirm('Rotate the admin path? The browser will be redirected to the new URL after a moment.')) return;

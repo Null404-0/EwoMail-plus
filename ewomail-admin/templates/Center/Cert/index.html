@@ -49,6 +49,8 @@
 <script>
 $(function () {
     function p(action, data, reload) {
+        if (typeof data === 'string') data += (data ? '&' : '') + '_method=put';
+        else { data = data || {}; data._method = 'put'; }
         ajaxPost('{U("/Cert/")}' + action, data, function (j) { if (j.status && reload !== false) location.reload(); });
     }
     $('#issue-form').on('submit', function (e) { e.preventDefault(); p('issue', $(this).serialize(), false); });

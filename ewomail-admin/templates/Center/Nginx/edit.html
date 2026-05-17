@@ -20,7 +20,7 @@
 <script>
 $('#edit-form').on('submit', function (e) {
     e.preventDefault();
-    ajaxPost('{U("/Nginx/save")}', $(this).serialize());
+    ajaxPost('{U("/Nginx/save")}', $(this).serialize() + '&_method=put');
 });
 </script>
 {include file="$HOME/footer.html"}
