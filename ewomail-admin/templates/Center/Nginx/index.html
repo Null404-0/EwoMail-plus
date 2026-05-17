@@ -46,7 +46,21 @@ $(function () {
         data = data || {};
         if (typeof data === 'string') data += (data ? '&' : '') + '_method=put';
         else data._method = 'put';
-        ajaxPost('{U("/Nginx")}/' + action, data, function (j) { if (j.status && reload !== false) location.reload(); });
+        var ii = layer.load(2);
+        $.ajax({
+            url: '{U("/Nginx")}/' + action,
+            type: 'POST', data: data, dataType: 'json',
+            timeout: 60000
+        }).done(function (j) {
+            layer.close(ii);
+            if (!j || typeof j.status === 'undefined') { layer.alert('响应异常'); return; }
+            if (j.status == 0) { layer.alert(j.msg || '失败'); return; }
+            layer.msg(j.msg || '成功', { time: 2500 });
+            if (reload !== false) setTimeout(function () { location.reload(); }, 1200);
+        }).fail(function (xhr, status) {
+            layer.close(ii);
+            layer.alert(status === 'timeout' ? '操作超时，请稍后重试' : '请求失败：' + status);
+        });
     }
     $('#btn-test').on('click',   function () { p('test', {}, false); });
     $('#btn-reload').on('click', function () { p('reload', {}, false); });

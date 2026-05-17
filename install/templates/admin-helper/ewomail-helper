@@ -122,6 +122,35 @@ case "${cmd}" in
         firewall-cmd --reload
         ;;
 
+    # ---- 出站邮件总开关 ----
+    # 关闭：iptables direct rule REJECT 出向 25/tcp + 移除入向 465/587
+    # 这样既阻止本机往外发邮件（即使账号被盗也无法群发），
+    # 又阻止外部用户用 465/587 通过本机做中继。
+    # 出向 25 通常 SMTP 客户端用，入向 465/587 是 Submission 接口。
+    outbound-disable)
+        firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 100 -p tcp --dport 25 -j REJECT 2>/dev/null || true
+        firewall-cmd --permanent --direct --add-rule ipv6 filter OUTPUT 100 -p tcp --dport 25 -j REJECT 2>/dev/null || true
+        firewall-cmd --permanent --zone="${ZONE}" --remove-port=465/tcp 2>/dev/null || true
+        firewall-cmd --permanent --zone="${ZONE}" --remove-port=587/tcp 2>/dev/null || true
+        firewall-cmd --reload
+        mysql -uroot ewomail -e "REPLACE INTO i_panel_setting VALUES ('outbound_disabled','yes')"
+        ;;
+    outbound-enable)
+        firewall-cmd --permanent --direct --remove-rule ipv4 filter OUTPUT 100 -p tcp --dport 25 -j REJECT 2>/dev/null || true
+        firewall-cmd --permanent --direct --remove-rule ipv6 filter OUTPUT 100 -p tcp --dport 25 -j REJECT 2>/dev/null || true
+        firewall-cmd --permanent --zone="${ZONE}" --add-port=465/tcp 2>/dev/null || true
+        firewall-cmd --permanent --zone="${ZONE}" --add-port=587/tcp 2>/dev/null || true
+        firewall-cmd --reload
+        mysql -uroot ewomail -e "REPLACE INTO i_panel_setting VALUES ('outbound_disabled','no')"
+        ;;
+    outbound-status)
+        if firewall-cmd --permanent --direct --query-rule ipv4 filter OUTPUT 100 -p tcp --dport 25 -j REJECT 2>/dev/null; then
+            echo yes
+        else
+            echo no
+        fi
+        ;;
+
     # ---- Nginx ----
     nginx-list)
         # Output: <name>\t<enabled|disabled>, one site per line. PHP-FPM's

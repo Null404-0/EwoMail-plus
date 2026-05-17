@@ -48,14 +48,35 @@
 
 <script>
 $(function () {
-    function p(action, data, reload) {
+    // acme.sh 操作可能跑 30-90 秒，全局 $.ajaxSetup({timeout:5000}) 会先超时。
+    // 这里改用 $.ajax + timeout:180000，并自己实现 layer 提示。
+    function pLong(action, data, cb) {
         if (typeof data === 'string') data += (data ? '&' : '') + '_method=put';
         else { data = data || {}; data._method = 'put'; }
-        ajaxPost('{U("/Cert")}/' + action, data, function (j) { if (j.status && reload !== false) location.reload(); });
+        var ii = layer.load(2);  // 2 = 旋转动画
+        $.ajax({
+            url: '{U("/Cert")}/' + action,
+            type: 'POST',
+            data: data,
+            dataType: 'json',
+            timeout: 180000  // 3 分钟
+        }).done(function (j) {
+            layer.close(ii);
+            if (!j || typeof j.status === 'undefined') { layer.alert('响应异常'); return; }
+            if (j.status == 0) { layer.alert(j.msg || '失败'); return; }
+            layer.msg(j.msg || '成功', { time: 2500 });
+            if (cb) cb(j);
+            else setTimeout(function () { location.reload(); }, 1500);
+        }).fail(function (xhr, status) {
+            layer.close(ii);
+            layer.alert(status === 'timeout' ?
+                '操作超时（>3 分钟仍未完成）。后台可能仍在运行，过一分钟刷新本页查看结果。' :
+                '请求失败：' + status);
+        });
     }
-    $('#issue-form').on('submit', function (e) { e.preventDefault(); p('issue', $(this).serialize(), false); });
-    $(document).on('click', '.btn-renew',   function () { p('renew',   { domain: $(this).data('d') }, false); });
-    $(document).on('click', '.btn-install', function () { p('install', { domain: $(this).data('d') }); });
+    $('#issue-form').on('submit', function (e) { e.preventDefault(); pLong('issue', $(this).serialize(), function () {}); });
+    $(document).on('click', '.btn-renew',   function () { pLong('renew',   { domain: $(this).data('d') }, function () {}); });
+    $(document).on('click', '.btn-install', function () { pLong('install', { domain: $(this).data('d') }); });
 });
 </script>
 {include file="$HOME/footer.html"}

@@ -49,6 +49,28 @@ trap on_error ERR
 
 ui_banner "EwoMail-plus 更新程序"
 
+# 先把要做的事说清楚，让用户有机会按 Ctrl-C 退出。
+cat <<EOF
+本次将执行以下操作：
+  1. git fetch origin master && fast-forward
+  2. 备份当前 /etc/{nginx,postfix,dovecot,amavis,fail2ban} 关键配置
+  3. 同步 ewomail-admin 代码到 /ewomail/www/ewomail-admin
+     （保留 cache/upload/attachment/session 用户数据）
+  4. 重新渲染服务配置 + 权限助手（除非加了 --code-only）
+  5. 应用 DB 增量（CREATE/INSERT IGNORE，从不删除已有数据）
+  6. reload nginx / postfix / dovecot / amavis / fail2ban / php-fpm
+
+不会做：apt 安装、修改 MariaDB root 密码、重新签发证书、改 admin 密码、动 URL 随机路径。
+中断不会导致数据损坏；如果配置渲染失败 nginx -t 会自动回滚 vhost。
+
+EOF
+printf '%s继续？[y/N]：%s ' "${UI_BOLD}" "${UI_RESET}"
+read -r ans
+case "${ans,,}" in
+    y|yes) ;;
+    *) ui_err "用户取消。"; exit 1 ;;
+esac
+
 # ---- 预检 ---------------------------------------------------------------
 [[ -f "${CREDENTIALS_FILE}" ]] || {
     ui_err "${CREDENTIALS_FILE} 不存在——本机似乎从未通过 install.sh 部署过。"

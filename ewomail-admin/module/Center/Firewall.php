@@ -24,13 +24,27 @@ Rout::get('index', function () {
         }
     }
 
+    $st = Helper::run(['outbound-status']);
+    $outbound_disabled = trim($st['out']) === 'yes';
+
     Tp::assign([
-        'raw'        => $list['out'],
-        'ok'         => $list['ok'],
-        'ports'      => $ports,
-        'blocked'    => $rejects,
+        'raw'               => $list['out'],
+        'ok'                => $list['ok'],
+        'ports'             => $ports,
+        'blocked'           => $rejects,
+        'outbound_disabled' => $outbound_disabled,
     ]);
     Tp::display();
+});
+
+Rout::put('outbound-disable', function () {
+    $r = Helper::run(['outbound-disable']);
+    $r['ok'] ? E::success('已关闭外发邮件（出站 25/tcp REJECT + 入站 465/587 关闭）') : E::error($r['out']);
+});
+
+Rout::put('outbound-enable', function () {
+    $r = Helper::run(['outbound-enable']);
+    $r['ok'] ? E::success('已恢复外发邮件') : E::error($r['out']);
 });
 
 Rout::put('port-add', function () {

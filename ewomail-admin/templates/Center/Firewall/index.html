@@ -7,6 +7,27 @@
     {/if}
 
     <div class="panel admin-panel">
+        <div class="panel-head"><strong>外发邮件总开关</strong></div>
+        <div class="padding">
+            {if $outbound_disabled}
+                <div class="alert alert-red" style="margin-bottom:10px;">
+                    ⚠ <strong>当前已关闭外发邮件功能</strong>。本机无法向外投递邮件，外部客户端无法通过 465/587 提交。
+                    用户在 webmail 中按「发送」会失败。仅入向 25/tcp 收件正常。
+                </div>
+                <a href="javascript:;" id="btn-outbound-enable" class="button bg-main">恢复外发</a>
+            {else}
+                <p>当前外发邮件正常。如担心账号被盗用 / 服务器被入侵后群发垃圾邮件，可一键关闭：</p>
+                <ul style="color:#666;line-height:1.7">
+                    <li>会在 OUTPUT 链加 REJECT 规则禁止出向 25/tcp 连接（任何 SMTP 客户端都不能往外发）</li>
+                    <li>会关闭防火墙的入向 465/587，外部客户端无法 SMTP 提交（防止中继滥用）</li>
+                    <li>入向 25/tcp（收信）+ 993/995/143/110（IMAP/POP3 读信）保持正常</li>
+                </ul>
+                <a href="javascript:;" id="btn-outbound-disable" class="button bg-red">关闭外发邮件</a>
+            {/if}
+        </div>
+    </div>
+
+    <div class="panel admin-panel" style="margin-top:14px">
         <div class="panel-head"><strong>已开放端口（zone: ewomail）</strong></div>
         <div class="padding">
             <form id="port-add-form" class="form-x" style="margin-bottom:10px">
@@ -82,6 +103,16 @@ $(function () {
     });
     $(document).on('click', '.btn-unblock', function () {
         ewoPost('unblock', { ip: $(this).data('ip') });
+    });
+
+    // 外发邮件开关——动作较重，给一次显式确认
+    $('#btn-outbound-disable').on('click', function () {
+        if (!confirm('确认关闭外发邮件？\n\n• 用户在 webmail 中按「发送」将立刻失败\n• 外部 SMTP 客户端无法用 465/587 提交\n• 仅入向收信保持正常\n\n继续？')) return;
+        ewoPost('outbound-disable', {});
+    });
+    $('#btn-outbound-enable').on('click', function () {
+        if (!confirm('确认恢复外发邮件？')) return;
+        ewoPost('outbound-enable', {});
     });
 });
 </script>
