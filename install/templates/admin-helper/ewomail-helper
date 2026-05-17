@@ -9,6 +9,12 @@
 set -Eeuo pipefail
 umask 077
 
+# acme.sh detects SUDO_USER and refuses to run ("It seems that you are using
+# sudo, please read this page first…"). We ARE root here (sudo-elevated from
+# www-data) which is fine — clear the sudo trail so child processes don't
+# see it. Also clean other variables that downstream tools can trip on.
+unset SUDO_USER SUDO_UID SUDO_GID SUDO_COMMAND
+
 usage() {
     cat >&2 <<EOF
 ewomail-helper <command> [args...]
