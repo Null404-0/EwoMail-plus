@@ -1,0 +1,57 @@
+{include file="$HOME/header.html"}
+<div class="admin">
+    <div class="panel admin-panel">
+        <div class="panel-head"><strong>Webmail 品牌（SnappyMail）</strong></div>
+        <div class="padding">
+            <form method="post" enctype="multipart/form-data" class="form-x" id="brandForm" action="{U('System/webmail-config')}">
+                <input type="hidden" name="_method" value="put" />
+
+                <div class="form-group">
+                    <div class="label"><label>浏览器标签 / 页面标题</label></div>
+                    <div class="field">
+                        <input type="text" class="input" name="title" size="50" value="{$snappy.title|escape}" placeholder="例如：我的邮箱">
+                        <span class="msg-box"><em>SnappyMail 顶部 &lt;title&gt; 显示的文字</em></span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="label"><label>载入页文字</label></div>
+                    <div class="field">
+                        <input type="text" class="input" name="loading_description" size="50" value="{$snappy.loading_description|escape}" placeholder="例如：正在载入...">
+                        <span class="msg-box"><em>用户打开 webmail 时 loading 屏中央的大字</em></span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="label"><label>Favicon</label></div>
+                    <div class="field">
+                        {if $snappy.favicon_url}
+                            <p>当前：
+                                <a href="{$snappy.favicon_url}" target="_blank"><img src="{$snappy.favicon_url}" style="height:24px;vertical-align:middle"> {$snappy.favicon_url}</a>
+                                &nbsp;<label><input type="checkbox" name="favicon_clear" value="1"> 删除当前 favicon</label>
+                            </p>
+                        {else}
+                            <p><em style="color:#888">尚未设置自定义 favicon（使用 SnappyMail 默认）</em></p>
+                        {/if}
+                        <input type="file" name="favicon" accept=".ico,.png,.jpg,.jpeg,.gif,image/*">
+                        <span class="msg-box"><em>支持 .ico / .png / .jpg / .gif，最大 256 KB（出于安全考虑不接受 SVG）</em></span>
+                    </div>
+                </div>
+
+                <div class="form-button">
+                    <button class="button bg-main" type="submit">保存设置</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="panel admin-panel" style="margin-top:14px">
+        <div class="panel-head"><strong>说明</strong></div>
+        <div class="padding" style="color:#666;line-height:1.7">
+            <p>这里改的设置会写入 SnappyMail 的 <code>application.ini</code>。保存后用户**刷新一次**邮箱页面就能看到新文案/图标，无需重启服务。</p>
+            <p>如果想恢复 SnappyMail 默认（标题 = "SnappyMail Webmail"、loading = "SnappyMail"、无 favicon），清空对应输入框 + 勾选「删除当前 favicon」即可。</p>
+            <p>SnappyMail 自带的管理后台地址：<code>https://&lt;你的邮件主机&gt;/?admin</code> 也能改这些设置，本面板只是把最常用的 3 项搬过来方便一站式编辑。</p>
+        </div>
+    </div>
+</div>
+{include file="$HOME/footer.html"}

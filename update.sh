@@ -265,6 +265,7 @@ CREATE TABLE IF NOT EXISTS i_panel_setting (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO i_admin_menu (menu_id, mark, lang, url, top_id, edit, del, edit_id, sort) VALUES
+  (207, 'Webmail 品牌','Webmail 品牌','/System/webmail-config', 200, 1, 0, 0, 40),
   (300, '服务器',  '服务器',   '',          0,   0, 0, 0, 50),
   (301, '防火墙',  '防火墙',   '/Firewall', 300, 1, 1, 0, 51),
   (302, 'Nginx',  'Nginx',     '/Nginx',    300, 1, 0, 0, 52),

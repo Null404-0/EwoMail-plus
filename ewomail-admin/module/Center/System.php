@@ -87,5 +87,31 @@ Rout::put('config',function(){
     E::success(1001);
 });
 
+// SnappyMail（Webmail）品牌设置：直接读写 application.ini
+Rout::get('webmail-config', function () {
+    Admin::setMenu(207, 'Webmail 品牌');
+    Tp::assign(['snappy' => SystemConfig::snappyIniRead()]);
+    Tp::display();
+});
+
+Rout::put('webmail-config', function () {
+    $updates = [
+        'title'               => trim((string) ipost('title')),
+        'loading_description' => trim((string) ipost('loading_description')),
+    ];
+    if (isset($_FILES['favicon']) && $_FILES['favicon']['error'] !== UPLOAD_ERR_NO_FILE) {
+        if ($_FILES['favicon']['error'] !== UPLOAD_ERR_OK) {
+            E::error('文件上传出错（错误码 ' . intval($_FILES['favicon']['error']) . '）');
+        }
+        $updates['favicon_url'] = SystemConfig::snappyFaviconSave($_FILES['favicon']);
+    } elseif (ipost('favicon_clear') === '1') {
+        SystemConfig::snappyFaviconClear();
+        $updates['favicon_url'] = '';
+    }
+    SystemConfig::snappyIniWrite($updates);
+    AdminLog::save(['ac' => 'edit', 'c' => 'Webmail 品牌']);
+    E::success('已保存（Webmail 下次刷新即生效）');
+});
+
 
 
