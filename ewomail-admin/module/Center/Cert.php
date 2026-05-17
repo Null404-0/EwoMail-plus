@@ -10,32 +10,40 @@ Rout::get('index', function () {
     $list = Helper::run(['cert-list']);
     $rows = [];
     if ($list['ok']) {
-        // --listraw format: Main_Domain|KeyLength|SAN_Domains|CA|Created|Renew
-        // The first line is the header; skip it.
-        $lines = preg_split('/\r?\n/', trim($list['out']));
-        foreach ($lines as $i => $line) {
-            if ($i === 0 || $line === '') continue;
-            $cols = explode('|', $line);
-            if (count($cols) >= 6) {
-                $rows[] = [
-                    'domain'  => $cols[0],
-                    'ca'      => $cols[3],
-                    'created' => $cols[4],
-                    'renew'   => $cols[5],
-                ];
-            }
+        // --listraw 在不同 acme.sh 版本里有时是管道分隔、有时是 tab 分隔；
+        // 用一组分隔符做宽容解析。第一列肯定是域名，后面字段可能错位但
+        // 不致命——展示给用户看就行。
+        foreach (preg_split('/\r?\n/', trim($list['out'])) as $line) {
+            $line = trim($line);
+            if ($line === '') continue;
+            // 跳过 header 行（"Main_Domain" 开头）
+            if (stripos($line, 'Main_Domain') === 0) continue;
+            $cols = preg_split('/\t+|\|+|\s{2,}/', $line);
+            if (!isset($cols[0]) || !Helper::validateFqdn(rtrim($cols[0], ' \t.'))) continue;
+            $rows[] = [
+                'domain'  => rtrim($cols[0], ' \t.'),
+                'ca'      => isset($cols[3]) ? $cols[3] : '',
+                'created' => isset($cols[4]) ? $cols[4] : '',
+                'renew'   => isset($cols[5]) ? $cols[5] : '',
+            ];
         }
     }
 
-    // Live nginx cert info (file mtime + subject from openssl)
+    // 通过 helper 读当前部署证书的信息（PHP 受 open_basedir 限制，无法
+    // 直接访问 /etc/ssl/ewomail/fullchain.pem）。
     $live = [];
-    $crt = '/etc/ssl/ewomail/fullchain.pem';
-    if (is_readable($crt)) {
-        $out = shell_exec('openssl x509 -in ' . escapeshellarg($crt) . ' -noout -subject -enddate 2>/dev/null');
+    $cur  = Helper::run(['cert-current']);
+    if ($cur['ok'] && trim($cur['out']) !== '' && strpos($cur['out'], 'missing') === false) {
+        $info = '';
+        $mt   = 0;
+        foreach (preg_split('/\r?\n/', $cur['out']) as $ln) {
+            if (preg_match('/^mtime=(\d+)/', $ln, $m)) { $mt = (int)$m[1]; continue; }
+            if ($ln !== '') $info .= $ln . "\n";
+        }
         $live = [
-            'path' => $crt,
-            'info' => trim($out ?: 'unknown'),
-            'mtime'=> date('Y-m-d H:i', filemtime($crt)),
+            'path'  => '/etc/ssl/ewomail/fullchain.pem',
+            'info'  => trim($info),
+            'mtime' => $mt ? date('Y-m-d H:i', $mt) : '',
         ];
     }
 
@@ -51,6 +59,12 @@ Rout::put('issue', function () {
     $d = trim(ipost('domain'));
     if (!Helper::validateFqdn($d)) E::error('域名格式无效');
     $r = Helper::run(['cert-issue', $d]);
+    // acme.sh 在「证书有效且不到续签时间」时会输出 "Domains not changed."
+    // 并返回非 0 退出码——这其实不是失败，给一个友好的提示。
+    if (!$r['ok'] && (strpos($r['out'], 'Domains not changed') !== false
+                      || strpos($r['out'], 'Skipping') !== false)) {
+        E::error('该域名已有未到期的证书，无需重新申请。如需强制更新，请使用下方表格里的「续签」按钮。');
+    }
     $r['ok'] ? E::success('已签发，请点击「安装」部署到 Nginx/Postfix/Dovecot。') : E::error('acme.sh: ' . $r['out']);
 });
 

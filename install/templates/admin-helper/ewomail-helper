@@ -124,7 +124,17 @@ case "${cmd}" in
 
     # ---- Nginx ----
     nginx-list)
-        ls -1 /etc/nginx/sites-available/
+        # Output: <name>\t<enabled|disabled>, one site per line. PHP-FPM's
+        # open_basedir hides /etc/nginx, so the panel relies on us for this.
+        for f in /etc/nginx/sites-available/*.conf; do
+            [[ -f "$f" ]] || continue
+            base=$(basename "$f")
+            if [[ -L "/etc/nginx/sites-enabled/${base}" || -e "/etc/nginx/sites-enabled/${base}" ]]; then
+                printf '%s\tenabled\n' "${base}"
+            else
+                printf '%s\tdisabled\n' "${base}"
+            fi
+        done
         ;;
     nginx-test)
         nginx -t 2>&1
@@ -178,6 +188,16 @@ case "${cmd}" in
         # --listraw outputs pipe-delimited stable columns:
         #   Main_Domain|KeyLength|SAN_Domains|CA|Created|Renew
         /root/.acme.sh/acme.sh --listraw
+        ;;
+    cert-current)
+        # Subject + Not After + epoch mtime of the deployed cert. PHP can't
+        # see /etc/ssl/ewomail (out of open_basedir), so it asks us.
+        if [[ -f /etc/ssl/ewomail/fullchain.pem ]]; then
+            openssl x509 -in /etc/ssl/ewomail/fullchain.pem -noout -subject -enddate 2>/dev/null
+            stat -c 'mtime=%Y' /etc/ssl/ewomail/fullchain.pem 2>/dev/null
+        else
+            echo 'missing'
+        fi
         ;;
     cert-install)
         [[ $# -eq 1 ]] && valid_fqdn "$1" || usage

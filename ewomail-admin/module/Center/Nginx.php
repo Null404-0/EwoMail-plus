@@ -11,12 +11,19 @@ Rout::get('index', function () {
     $list = Helper::run(['nginx-list']);
     $sites = [];
     if ($list['ok']) {
+        // 新格式：每行 "<name>\t<enabled|disabled>"
+        // PHP-FPM 受 open_basedir 限制无法直接看 /etc/nginx/sites-enabled，
+        // 启用状态由 helper 在 root 身份下判定后回传。
         foreach (preg_split('/\r?\n/', $list['out']) as $line) {
-            $line = trim($line);
-            if ($line !== '' && Helper::validateSiteName($line)) {
+            $line = rtrim($line);
+            if ($line === '') continue;
+            $parts = explode("\t", $line);
+            $name  = $parts[0];
+            $state = isset($parts[1]) ? $parts[1] : 'disabled';
+            if (Helper::validateSiteName($name)) {
                 $sites[] = [
-                    'name'    => $line,
-                    'enabled' => file_exists('/etc/nginx/sites-enabled/' . $line),
+                    'name'    => $name,
+                    'enabled' => $state === 'enabled',
                 ];
             }
         }
