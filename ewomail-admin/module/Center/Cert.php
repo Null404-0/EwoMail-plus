@@ -10,21 +10,29 @@ Rout::get('index', function () {
     $list = Helper::run(['cert-list']);
     $rows = [];
     if ($list['ok']) {
-        // --listraw 在不同 acme.sh 版本里有时是管道分隔、有时是 tab 分隔；
-        // 用一组分隔符做宽容解析。第一列肯定是域名，后面字段可能错位但
-        // 不致命——展示给用户看就行。
+        // --listraw 输出形如：
+        //   Main_Domain|KeyLength|SAN_Domains|CA|Created|Renew     (旧版)
+        //   Main_Domain|KeyLength|SAN_Domains|Profile|CA|Created|Renew (新版多 Profile)
+        // 用 header 行确定列位置，未来再加列也不会错位。
+        $header = null;
         foreach (preg_split('/\r?\n/', trim($list['out'])) as $line) {
             $line = trim($line);
             if ($line === '') continue;
-            // 跳过 header 行（"Main_Domain" 开头）
-            if (stripos($line, 'Main_Domain') === 0) continue;
-            $cols = preg_split('/\t+|\|+|\s{2,}/', $line);
-            if (!isset($cols[0]) || !Helper::validateFqdn(rtrim($cols[0], ' \t.'))) continue;
+            $cols = explode('|', $line);
+            if ($header === null && stripos($line, 'Main_Domain') === 0) {
+                $header = array_flip(array_map('trim', $cols));
+                continue;
+            }
+            $domain = isset($cols[0]) ? rtrim($cols[0], " \t.") : '';
+            if (!Helper::validateFqdn($domain)) continue;
+            $idx = function ($name, $fallback) use ($header) {
+                return $header && isset($header[$name]) ? $header[$name] : $fallback;
+            };
             $rows[] = [
-                'domain'  => rtrim($cols[0], ' \t.'),
-                'ca'      => isset($cols[3]) ? $cols[3] : '',
-                'created' => isset($cols[4]) ? $cols[4] : '',
-                'renew'   => isset($cols[5]) ? $cols[5] : '',
+                'domain'  => $domain,
+                'ca'      => trim((string)($cols[$idx('CA',      3)] ?? ''), " \"'"),
+                'created' => trim((string)($cols[$idx('Created', 4)] ?? '')),
+                'renew'   => trim((string)($cols[$idx('Renew',   5)] ?? '')),
             ];
         }
     }
