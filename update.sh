@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+# EwoMail-plus updater
+# Pulls latest from origin/master, syncs the admin code to /ewomail/www/,
+# re-renders service configs and the privilege helper, applies any
+# idempotent DB additions, and reloads affected services.
+#
+# Safe to re-run. Preserves user data (mailboxes, attachments, sessions,
+# Smarty compiled cache), random URL paths, admin password and code_key.
+#
+# Usage:
+#   bash update.sh                    # full update
+#   bash update.sh --code-only        # skip service-config re-render
+#   bash update.sh --no-git-pull      # use whatever's already checked out
+
+set -Eeuo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALLER_DIR="${REPO_DIR}/install"
+EWOMAIL_PREFIX="/ewomail"
+CREDENTIALS_FILE="${EWOMAIL_PREFIX}/credentials.txt"
+LOG_FILE="/var/log/ewomail-update.log"
+BACKUP_DIR="${EWOMAIL_PREFIX}/.update-backup/$(date +%Y%m%d-%H%M%S)"
+
+CODE_ONLY=0
+DO_GIT_PULL=1
+for arg in "$@"; do
+    case "$arg" in
+        --code-only)   CODE_ONLY=1 ;;
+        --no-git-pull) DO_GIT_PULL=0 ;;
+        -h|--help)
+            sed -n '2,15p' "$0"; exit 0 ;;
+        *) echo "未知参数：$arg"; exit 2 ;;
+    esac
+done
+
+export INSTALLER_DIR REPO_DIR EWOMAIL_PREFIX CREDENTIALS_FILE LOG_FILE
+
+# shellcheck source=install/lib/ui.sh
+source "${INSTALLER_DIR}/lib/ui.sh"
+# shellcheck source=install/lib/credentials.sh
+source "${INSTALLER_DIR}/lib/credentials.sh"
+
+# Update has 6 phases — override the installer's default total so [N/14] is sane.
+UI_STEP_TOTAL=6
+
+require_root
+init_logging
+trap on_error ERR
+
+ui_banner "EwoMail-plus 更新程序"
+
+# ---- 预检 ---------------------------------------------------------------
+[[ -f "${CREDENTIALS_FILE}" ]] || {
+    ui_err "${CREDENTIALS_FILE} 不存在——本机似乎从未通过 install.sh 部署过。"
+    ui_err "首次部署请运行：./install/install.sh"
+    exit 1
+}
+[[ -d /ewomail/www/ewomail-admin ]] || {
+    ui_err "/ewomail/www/ewomail-admin 不存在——部署不完整？"
+    exit 1
+}
+[[ -d "${REPO_DIR}/.git" ]] || {
+    ui_err "${REPO_DIR} 不是 git 仓库；无法 git pull。"
+    exit 1
+}
+
+# 从 /etc/os-release 取版本（renderer 用得到）
+# shellcheck disable=SC1091
+source /etc/os-release
+export EWO_OS_VER="${VERSION_ID:-0}"
+export EWO_OS_CODENAME="${VERSION_CODENAME:-}"
+
+# 从凭据文件提取键值。Summary 写入格式：
+#   keyname<spaces>= value
+# 用默认 FS（空白）切，$1=key、$2='='、$3+=value（带空格的密码也能正确拼回）。
+_cred_get() {
+    awk -v k="$1" '$1 == k && $2 == "=" {
+        out = $3
+        for (i = 4; i <= NF; i++) out = out " " $i
+        print out; exit
+    }' "${CREDENTIALS_FILE}"
+}
+export EWO_DOMAIN="$(_cred_get domain)"
+export EWO_MAIL_HOST="$(_cred_get mail_host)"
+export EWO_PUBLIC_IP="$(_cred_get public_ip)"
+export EWO_MYSQL_ROOT_PWD="$(_cred_get root_password)"
+export EWO_MYSQL_EWOMAIL_PWD="$(_cred_get ewomail_db_password)"
+export EWO_ADMIN_PWD="$(_cred_get password)"
+
+[[ -n "${EWO_DOMAIN}" && -n "${EWO_MYSQL_EWOMAIL_PWD}" ]] || {
+    ui_err "无法从 ${CREDENTIALS_FILE} 解析出 domain / 密码——文件可能被手动改过。"
+    exit 1
+}
+
+# 从数据库读 随机 URL 路径 / DB 开关 / LE 邮箱
+_db_get() { mysql -uroot -N -B ewomail -e "SELECT value FROM i_panel_setting WHERE name='$1'" 2>/dev/null; }
+export EWO_ADMIN_PATH="$(_db_get admin_path)"
+export EWO_DB_PATH="$(_db_get db_path)"
+export EWO_DB_ADMIN_ENABLED="$(_db_get db_admin_enable)"
+export EWO_ADMIN_EMAIL="$(_db_get le_email)"
+[[ -z "${EWO_ADMIN_EMAIL}" ]] && EWO_ADMIN_EMAIL="admin@${EWO_DOMAIN}"
+[[ -z "${EWO_ADMIN_PATH}" || -z "${EWO_DB_PATH}" ]] && {
+    ui_err "从 i_panel_setting 读不到 admin_path / db_path；DB 是否可达？"
+    exit 1
+}
+
+# code_key 不应该更换（更换会让所有已登录 session 失效）。从现有 config.php 提取保留。
+export EWO_CODE_KEY="$(awk -F"'" "/'code_key'/{print \$4; exit}" /ewomail/www/ewomail-admin/core/config.php 2>/dev/null)"
+[[ -z "${EWO_CODE_KEY}" ]] && EWO_CODE_KEY="$(_random_password 32 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c32)"
+
+# 探测 PHP 版本（renderer 用得到）
+EWO_PHP_VER="$(php -v 2>/dev/null | awk 'NR==1{split($2,a,"."); print a[1]"."a[2]}')"
+[[ -z "${EWO_PHP_VER}" ]] && EWO_PHP_VER="8.2"
+export EWO_PHP_VER
+export EWO_PHP_SOCK="/run/php/php${EWO_PHP_VER}-fpm-ewomail.sock"
+export EWO_PHP_FPM_SERVICE="php${EWO_PHP_VER}-fpm"
+
+ui_info "域名：${EWO_DOMAIN}  邮件主机：${EWO_MAIL_HOST}"
+ui_info "PHP-FPM：${EWO_PHP_VER}   后台路径：/${EWO_ADMIN_PATH}/   DB 入口：/${EWO_DB_PATH}/ (启用=${EWO_DB_ADMIN_ENABLED})"
+
+# ---- 1. 拉取最新代码 -----------------------------------------------------
+step "拉取最新代码"
+if (( DO_GIT_PULL )); then
+    cd "${REPO_DIR}"
+    local_before="$(git rev-parse HEAD)"
+    run git fetch origin master
+    if ! git merge --ff-only origin/master >>"${LOG_FILE}" 2>&1; then
+        ui_err "本地分支与 origin/master 有冲突，无法 fast-forward。"
+        ui_err "请先用  git status / git log  查看，并手动 reset/merge 后再运行。"
+        exit 1
+    fi
+    local_after="$(git rev-parse HEAD)"
+    if [[ "${local_before}" == "${local_after}" ]]; then
+        ui_ok "已是最新版本，无新提交"
+    else
+        ui_ok "已更新到 $(git log --oneline -1)"
+        ui_dim "新提交："
+        git log --oneline "${local_before}..${local_after}" | sed 's/^/    /'
+    fi
+else
+    ui_info "已跳过 git pull（--no-git-pull）"
+fi
+
+# ---- 2. 备份关键文件（出错时可手动还原） --------------------------------
+step "备份当前配置到 ${BACKUP_DIR}"
+install -d -m 0700 "${BACKUP_DIR}"
+for f in /etc/nginx/sites-available/ewomail.conf /etc/postfix/main.cf /etc/postfix/master.cf \
+         /etc/dovecot/dovecot.conf /etc/amavis/conf.d/50-user \
+         /etc/php/${EWO_PHP_VER}/fpm/pool.d/ewomail.conf \
+         /ewomail/www/ewomail-admin/core/config.php \
+         /ewomail/sbin/ewomail-helper /etc/fail2ban/jail.local; do
+    [[ -f "$f" ]] && cp --parents "$f" "${BACKUP_DIR}/" 2>/dev/null || true
+done
+ui_ok "备份完成"
+
+# ---- 3. 同步 admin 代码 --------------------------------------------------
+step "同步 admin 代码到 /ewomail/www/ewomail-admin"
+# --delete 让仓库里删除的文件也同步删除；--exclude 保留用户数据。
+run rsync -a --delete \
+    --exclude='cache/' \
+    --exclude='upload/' \
+    --exclude='attachment/' \
+    --exclude='session/' \
+    "${REPO_DIR}/ewomail-admin/" /ewomail/www/ewomail-admin/
+
+# 重新渲染 core/config.php（覆盖 rsync 拷过来的占位版）
+render_template "${INSTALLER_DIR}/templates/snappymail/admin-config.php" \
+                /ewomail/www/ewomail-admin/core/config.php
+chmod 0440 /ewomail/www/ewomail-admin/core/config.php
+chown www-data:www-data /ewomail/www/ewomail-admin/core/config.php
+
+# 清掉 Smarty 编译缓存，避免旧 .php 编译产物挡道
+if [[ -d /ewomail/www/ewomail-admin/cache/templates ]]; then
+    find /ewomail/www/ewomail-admin/cache/templates -mindepth 1 -delete 2>/dev/null || true
+fi
+
+# 修一遍权限：rsync 复制走的权限来自仓库（一般 0644/0755），但 session 目录需要 0770
+chown -R www-data:www-data /ewomail/www/ewomail-admin
+chmod 0770 /ewomail/www/session /ewomail/www/session/* 2>/dev/null || true
+ui_ok "admin 代码已同步并清缓存"
+
+# ---- 4. 服务配置 re-render（可 --code-only 跳过） -------------------------
+if (( CODE_ONLY )); then
+    ui_info "已跳过服务配置 re-render（--code-only）"
+else
+    step "重新渲染服务配置"
+
+    # Postfix
+    render_template "${INSTALLER_DIR}/templates/postfix/main.cf"   /etc/postfix/main.cf
+    render_template "${INSTALLER_DIR}/templates/postfix/master.cf" /etc/postfix/master.cf
+    for f in mysql-mailbox-domains.cf mysql-mailbox-maps.cf mysql-alias-maps.cf \
+             mysql-sender-login-maps.cf mysql_bcc_user.cf; do
+        render_template "${INSTALLER_DIR}/templates/postfix/mysql/${f}" "/etc/postfix/mysql/${f}"
+        chown root:postfix "/etc/postfix/mysql/${f}"
+        chmod 0640 "/etc/postfix/mysql/${f}"
+    done
+
+    # Dovecot
+    render_template "${INSTALLER_DIR}/templates/dovecot/dovecot.conf"         /etc/dovecot/dovecot.conf
+    render_template "${INSTALLER_DIR}/templates/dovecot/dovecot-sql.conf.ext" /etc/dovecot/dovecot-sql.conf.ext
+    chgrp dovecot /etc/dovecot/dovecot-sql.conf.ext
+    chmod 0640    /etc/dovecot/dovecot-sql.conf.ext
+    for f in 10-auth.conf 10-logging.conf 10-mail.conf 10-master.conf 10-ssl.conf \
+             15-lda.conf 15-mailboxes.conf 20-imap.conf 20-pop3.conf 20-lmtp.conf \
+             20-managesieve.conf 90-sieve.conf 90-quota.conf auth-sql.conf.ext; do
+        render_template "${INSTALLER_DIR}/templates/dovecot/conf.d/${f}" "/etc/dovecot/conf.d/${f}"
+    done
+
+    # Amavis (50-user is rendered; DKIM key NOT regenerated)
+    render_template "${INSTALLER_DIR}/templates/amavis/50-user" /etc/amavis/conf.d/50-user
+
+    # PHP-FPM pool
+    render_template "${INSTALLER_DIR}/templates/php-fpm/ewomail.conf" \
+                    "/etc/php/${EWO_PHP_VER}/fpm/pool.d/ewomail.conf"
+
+    # fail2ban
+    render_template "${INSTALLER_DIR}/templates/fail2ban/jail.local"           /etc/fail2ban/jail.local
+    render_template "${INSTALLER_DIR}/templates/fail2ban/postfix-ewomail.conf" /etc/fail2ban/filter.d/postfix-ewomail.conf
+
+    # Nginx snippets + vhost。Vhost 渲染后要按当前 DB 状态再决定 Adminer 是否封禁。
+    render_template "${INSTALLER_DIR}/templates/nginx/nginx.conf"             /etc/nginx/nginx.conf
+    render_template "${INSTALLER_DIR}/templates/nginx/snippets/php.conf"      /etc/nginx/snippets/ewomail-php.conf
+    render_template "${INSTALLER_DIR}/templates/nginx/snippets/security.conf" /etc/nginx/snippets/ewomail-security.conf
+    render_template "${INSTALLER_DIR}/templates/nginx/snippets/ssl.conf"      /etc/nginx/snippets/ewomail-ssl.conf
+    render_template "${INSTALLER_DIR}/templates/nginx/ewomail.conf"           /etc/nginx/sites-available/ewomail.conf
+    rm -f /etc/nginx/conf.d/default.conf  # nginx.org 包带的默认 vhost
+    if [[ "${EWO_DB_ADMIN_ENABLED}" == "yes" ]]; then
+        sed -i '/## EWOMAIL_DB_ENABLED ##/d' /etc/nginx/sites-available/ewomail.conf
+    else
+        sed -i 's|## EWOMAIL_DB_ENABLED ##|return 404; # EWOMAIL_DB_DISABLED|' /etc/nginx/sites-available/ewomail.conf
+    fi
+    ln -sf /etc/nginx/sites-available/ewomail.conf /etc/nginx/sites-enabled/ewomail.conf
+
+    # 验证 nginx；失败则回滚 vhost
+    if ! nginx -t >>"${LOG_FILE}" 2>&1; then
+        ui_err "nginx -t 失败，已回滚 vhost。请查看 ${LOG_FILE} 排错。"
+        cp "${BACKUP_DIR}/etc/nginx/sites-available/ewomail.conf" /etc/nginx/sites-available/ewomail.conf 2>/dev/null || true
+        exit 1
+    fi
+    ui_ok "服务配置已 re-render（nginx -t 通过）"
+
+    # 权限助手脚本
+    install -d -m 0750 -o root -g www-data /ewomail/sbin
+    render_template "${INSTALLER_DIR}/templates/admin-helper/ewomail-helper" /ewomail/sbin/ewomail-helper
+    chmod 0750 /ewomail/sbin/ewomail-helper
+    chown root:www-data /ewomail/sbin/ewomail-helper
+
+    # sudoers fragment（idempotent，每次覆盖确保规则一致）
+    install -d -m 0750 -o root -g root /etc/sudoers.d
+    cat > /etc/sudoers.d/ewomail <<EOF
+www-data ALL=(root) NOPASSWD: /ewomail/sbin/ewomail-helper
+Defaults!/ewomail/sbin/ewomail-helper !requiretty
+EOF
+    chmod 0440 /etc/sudoers.d/ewomail
+    run visudo -cf /etc/sudoers.d/ewomail
+    ui_ok "权限助手已更新"
+fi
+
+# ---- 5. DB 增量（幂等） ---------------------------------------------------
+step "应用 DB 增量（idempotent）"
+mysql -uroot ewomail <<'EOF' 2>>"${LOG_FILE}"
+CREATE TABLE IF NOT EXISTS i_panel_setting (
+    name  VARCHAR(64) PRIMARY KEY,
+    value TEXT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO i_admin_menu (menu_id, mark, lang, url, top_id, edit, del, edit_id, sort) VALUES
+  (300, 'Server',   'Server',   '',          0,   0, 0, 0, 50),
+  (301, 'Firewall', 'Firewall', '/Firewall', 300, 1, 1, 0, 51),
+  (302, 'Nginx',    'Nginx',    '/Nginx',    300, 1, 0, 0, 52),
+  (303, 'SSL',      'SSL',      '/Cert',     300, 1, 0, 0, 53),
+  (304, 'Settings', 'Settings', '/Setting',  300, 1, 0, 0, 54);
+EOF
+ui_ok "DB 增量已应用"
+
+# ---- 6. Reload 服务 -------------------------------------------------------
+if (( CODE_ONLY )); then
+    # Only PHP-FPM cares about admin code (opcache invalidation).
+    step "重启 PHP-FPM（让 opcache 重新加载 admin 代码）"
+    run systemctl restart "${EWO_PHP_FPM_SERVICE}"
+else
+    step "Reload 受影响的服务"
+    for svc in "${EWO_PHP_FPM_SERVICE}" nginx postfix dovecot amavis fail2ban; do
+        if systemctl is-active --quiet "${svc}"; then
+            run_quiet systemctl reload-or-restart "${svc}" || run_quiet systemctl restart "${svc}" || true
+        fi
+    done
+    ui_ok "服务已 reload"
+fi
+
+# ---- 7. 总结 -------------------------------------------------------------
+echo
+ui_ok "更新完成。"
+ui_info "如发现问题，本次操作前的配置备份在 ${BACKUP_DIR}"
+ui_info "回滚单文件：cp ${BACKUP_DIR}/<path> <path>  然后  systemctl reload <svc>"

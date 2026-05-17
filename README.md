@@ -46,6 +46,36 @@ The installer is interactive: it asks for your domain, admin email and a few
 toggles, then runs through 14 stages with progress reporting. Total install
 time is ~10 minutes on a 2 GB VPS.
 
+## Update
+
+After the first install, to pick up fixes / new features from upstream:
+
+```bash
+cd ~/EwoMail-plus
+bash update.sh
+```
+
+`update.sh`:
+
+- Pulls the latest commit from `origin/master` (`--ff-only`; aborts on divergence).
+- Backs up the current configs to `/ewomail/.update-backup/<timestamp>/`.
+- Re-syncs the admin code into `/ewomail/www/ewomail-admin/`, preserving
+  user data (mailboxes, attachments, Smarty cache, sessions).
+- Re-renders all service config templates (Postfix / Dovecot / Nginx / amavis /
+  PHP-FPM / fail2ban / privilege helper).
+- Applies any new idempotent DB additions (new panel-setting columns, new
+  Server-menu rows, etc.) — never drops or overwrites your data.
+- Runs `nginx -t` before reloading; rolls back the vhost on failure.
+- Reloads (or restarts when reload is unavailable) only the affected services.
+
+Flags:
+
+- `--code-only` — skip service-config re-render, just sync admin code and
+  bump PHP-FPM. Useful when you only want UI/PHP changes without touching
+  Postfix/Dovecot/etc.
+- `--no-git-pull` — use whatever is already checked out (e.g. after a manual
+  `git fetch` and `git checkout <tag>`).
+
 When it finishes you get:
 
 - A randomly generated admin password
