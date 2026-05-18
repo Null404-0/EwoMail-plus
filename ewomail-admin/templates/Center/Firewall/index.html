@@ -7,14 +7,22 @@
     {/if}
 
     <div class="panel admin-panel">
-        <div class="panel-head"><strong>外发邮件总开关</strong></div>
+        <div class="panel-head">
+            <strong>外发邮件总开关</strong>
+            {if $outbound_disabled}
+                <span style="float:right;background:#e53935;color:#fff;padding:2px 10px;border-radius:3px;font-weight:bold">● 已关闭</span>
+            {else}
+                <span style="float:right;background:#43a047;color:#fff;padding:2px 10px;border-radius:3px;font-weight:bold">● 正常</span>
+            {/if}
+        </div>
         <div class="padding">
             {if $outbound_disabled}
                 <div class="alert alert-red" style="margin-bottom:10px;">
                     ⚠ <strong>当前已关闭外发邮件功能</strong>。本机无法向外投递邮件，外部客户端无法通过 465/587 提交。
                     用户在 webmail 中按「发送」会失败。仅入向 25/tcp 收件正常。
                 </div>
-                <a href="javascript:;" id="btn-outbound-enable" class="button bg-main">恢复外发</a>
+                <a href="javascript:;" id="btn-outbound-enable" class="button bg-main" style="font-size:14px;padding:8px 24px">一键恢复外发</a>
+                <em style="margin-left:14px;color:#888">点击后会立即恢复出站 25/tcp 和入站 465/587。</em>
             {else}
                 <p>当前外发邮件正常。如担心账号被盗用 / 服务器被入侵后群发垃圾邮件，可一键关闭：</p>
                 <ul style="color:#666;line-height:1.7">
@@ -28,26 +36,45 @@
     </div>
 
     <div class="panel admin-panel" style="margin-top:14px">
-        <div class="panel-head"><strong>已开放端口（zone: ewomail）</strong></div>
+        <div class="panel-head"><strong>端口管理（zone: ewomail）</strong></div>
         <div class="padding">
             <form id="port-add-form" class="form-x" style="margin-bottom:10px">
                 <div class="form-group" style="margin:0;display:inline-block;">
                     <input type="text" name="port" placeholder="例如 8000/tcp" class="input" style="width:200px" required>
-                    <button type="submit" class="button bg-main">开放端口</button>
+                    <button type="submit" class="button bg-main">开放新端口</button>
+                    <em style="color:#888;margin-left:8px">下方常用端口可直接切换；自定义端口在这里加。</em>
                 </div>
             </form>
             <table class="table table-hover">
-                <thead><tr><th>端口</th><th width="120">操作</th></tr></thead>
+                <thead><tr><th width="120">端口</th><th>说明</th><th width="100">状态</th><th width="100">操作</th></tr></thead>
                 <tbody>
-                {foreach from=$ports item=p}
-                    <tr><td>{$p}</td>
-                        <td><a href="javascript:;" class="btn-port-del" data-port="{$p}">关闭</a></td>
+                {foreach from=$port_rows item=row}
+                    <tr>
+                        <td><strong>{$row.port}</strong></td>
+                        <td style="color:#666">{$row.desc}</td>
+                        <td>
+                            {if $row.open}
+                                <span style="color:#43a047;font-weight:bold">● 已开放</span>
+                            {else}
+                                <span style="color:#999">○ 未开放</span>
+                            {/if}
+                        </td>
+                        <td>
+                            {if $row.open}
+                                <a href="javascript:;" class="button button-little border-yellow btn-port-del" data-port="{$row.port}">关闭</a>
+                            {else}
+                                <a href="javascript:;" class="button button-little border-green btn-port-add" data-port="{$row.port}">开放</a>
+                            {/if}
+                        </td>
                     </tr>
                 {foreachelse}
-                    <tr><td colspan="2" align="center">尚无开放端口</td></tr>
+                    <tr><td colspan="4" align="center">尚无端口</td></tr>
                 {/foreach}
                 </tbody>
             </table>
+            <p style="color:#888;margin-top:6px;font-size:12px">
+                注：SSH 端口（22/tcp）已被刻意排除在管理列表外，无法通过本面板关闭，以防意外失联。
+            </p>
         </div>
     </div>
 
@@ -99,9 +126,21 @@ $(function () {
     }
     $('#port-add-form').on('submit', function (e) { e.preventDefault(); ewoPost('port-add', $(this).serialize()); });
     $('#block-form').on('submit',    function (e) { e.preventDefault(); ewoPost('block',    $(this).serialize()); });
+    $(document).on('click', '.btn-port-add', function () {
+        ewoPost('port-add', { port: $(this).data('port') });
+    });
     $(document).on('click', '.btn-port-del', function () {
-        if (!confirm('关闭端口 ' + $(this).data('port') + ' ？')) return;
-        ewoPost('port-del', { port: $(this).data('port') });
+        var port = $(this).data('port');
+        // 关键收信端口给一句更强的确认 —— 关掉 25 = 收不到外网邮件
+        var critical = { '25/tcp': '外网投递（彻底收不到任何来自其他邮件服务器的邮件）',
+                         '80/tcp': 'acme.sh HTTP-01 续签 SSL（证书会过期后失败）',
+                         '443/tcp': '所有 HTTPS 访问（网页 / 管理后台 / Webmail 全断）' };
+        if (critical[port]) {
+            if (!confirm('警告：关闭 ' + port + ' 会影响 ' + critical[port] + '。\n\n确定要关闭吗？')) return;
+        } else {
+            if (!confirm('关闭端口 ' + port + ' ？')) return;
+        }
+        ewoPost('port-del', { port: port });
     });
     $(document).on('click', '.btn-unblock', function () {
         ewoPost('unblock', { ip: $(this).data('ip') });

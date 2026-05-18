@@ -99,6 +99,13 @@ case "${cmd}" in
         ;;
     fw-del)
         [[ $# -eq 1 ]] && valid_port_proto "$1" || usage
+        # SSH 端口绝不允许通过此 helper 关闭。有些 VPS 没有外层安全组
+        # （RackNerd 等小厂常见），关掉 22 后 SSH 立刻断开 = 失联。
+        # UI 也会把 22 过滤掉，但这里再加一道防御。
+        if [[ "$1" == "22/tcp" || "$1" == "22/udp" ]]; then
+            echo "refused: 22/tcp/udp 是 SSH 端口，不允许通过此面板关闭" >&2
+            exit 2
+        fi
         firewall-cmd --permanent --zone="${ZONE}" --remove-port="$1"
         firewall-cmd --reload
         ;;

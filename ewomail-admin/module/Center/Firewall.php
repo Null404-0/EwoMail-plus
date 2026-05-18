@@ -4,16 +4,31 @@
  */
 if (!defined('PATH')) exit;
 
+// 邮件服务相关的常用端口。即使当前没在防火墙里开，也列出来让管理员
+// 看到状态 + 一键开启。22/tcp 故意不在这里 —— UI 不允许操作，避免
+// 没有外层安全组的 VPS 不小心切到自己 SSH。
+const KNOWN_PORTS = [
+    '25/tcp'  => 'SMTP 收信（外网投递必须开）',
+    '80/tcp'  => 'HTTP（acme.sh 申请 / 续签 SSL 必须开）',
+    '443/tcp' => 'HTTPS（网页 / 管理后台 / Webmail）',
+    '465/tcp' => 'SMTPS 提交（客户端发信，TLS）',
+    '587/tcp' => 'Submission 提交（客户端发信，STARTTLS）',
+    '993/tcp' => 'IMAPS 收信（客户端读信，TLS）',
+    '995/tcp' => 'POP3S 收信（客户端读信，TLS）',
+    '143/tcp' => 'IMAP 收信（客户端读信，明文 / STARTTLS）',
+    '110/tcp' => 'POP3 收信（客户端读信，明文 / STARTTLS）',
+];
+
 Rout::get('index', function () {
     Admin::setMenu(301, '防火墙');
 
     $list = Helper::run(['fw-list']);
 
     // Parse firewall-cmd --list-all output into structured arrays.
-    $ports = []; $rejects = []; $allowlist = [];
+    $ports_open = []; $rejects = [];
     if ($list['ok']) {
         if (preg_match('/ports:\s*([^\n]*)/', $list['out'], $m)) {
-            $ports = array_values(array_filter(preg_split('/\s+/', trim($m[1]))));
+            $ports_open = array_values(array_filter(preg_split('/\s+/', trim($m[1]))));
         }
         if (preg_match('/rich rules:(.+?)(?:\n\w|\Z)/s', $list['out'], $m)) {
             foreach (preg_split('/\n/', trim($m[1])) as $line) {
@@ -24,13 +39,26 @@ Rout::get('index', function () {
         }
     }
 
+    // 先按 KNOWN_PORTS 顺序输出（含未开放的），再追加用户自定义端口；
+    // 22/tcp/udp 全程过滤掉 —— UI 上完全看不到，避免误操作。
+    $open_set = array_flip($ports_open);
+    $port_rows = [];
+    foreach (KNOWN_PORTS as $p => $desc) {
+        $port_rows[] = ['port' => $p, 'desc' => $desc, 'open' => isset($open_set[$p]), 'known' => true];
+    }
+    foreach ($ports_open as $p) {
+        if ($p === '22/tcp' || $p === '22/udp') continue;
+        if (isset(KNOWN_PORTS[$p])) continue;
+        $port_rows[] = ['port' => $p, 'desc' => '自定义端口', 'open' => true, 'known' => false];
+    }
+
     $st = Helper::run(['outbound-status']);
     $outbound_disabled = trim($st['out']) === 'yes';
 
     Tp::assign([
         'raw'               => $list['out'],
         'ok'                => $list['ok'],
-        'ports'             => $ports,
+        'port_rows'         => $port_rows,
         'blocked'           => $rejects,
         'outbound_disabled' => $outbound_disabled,
     ]);
