@@ -48,8 +48,17 @@ class Helper
 
 
     /**
-     * Stream helper stdout directly to the browser. Intended for downloads.
-     * Stderr is captured and returned so binary stdout is never polluted.
+     * Stream helper stdout directly to the browser. Intended for downloads
+     * (cert-backup style — binary archives where we must not pollute stdout
+     * with diagnostic noise from PHP / framework / Smarty).
+     *
+     * 重要限制：本实现只在 loop 里读 stdout，stderr 留到最后用
+     * stream_get_contents() 收。Linux pipe 缓冲区默认 64 KB —— 若被调
+     * 子命令往 stderr 写超过这个量，会阻塞在 stderr 写、而 PHP 在等
+     * stdout 读完，经典管道死锁。只用于「成功路径 stderr 基本为空、
+     * 失败路径 stderr 只是几十字节错误信息」的子命令；不要拿来跑
+     * apt / clamav 等大量诊断输出的命令。需要那种用法时改写成
+     * stream_set_blocking + stream_select 同时轮询两条管道。
      */
     public static function stream(array $args, &$err = '')
     {
