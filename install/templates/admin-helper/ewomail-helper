@@ -318,14 +318,28 @@ case "${cmd}" in
     db-import)
         # stdin: 来自任意 mysqldump 的 SQL；可能含 CREATE/DROP/admin/system_config 等等
         # 处理流程：
-        #   1) grep 只挑白名单业务表的 INSERT 语句（拒收 DROP TABLE / CREATE / DELETE）
-        #   2) INSERT INTO → INSERT IGNORE INTO（已存在 email/name 就跳过，不覆盖）
-        #   3) 落到 mysql；同时输出统计供 PHP 显示
+        #   1) 查目标库实际存在的业务表（i_day_record 这种可能没有）→ 动态白名单
+        #   2) grep 只挑白名单内表的 INSERT 语句（拒收 DROP TABLE / CREATE / DELETE）
+        #   3) INSERT INTO → INSERT IGNORE INTO（已存在 email/name 就跳过，不覆盖）
+        #   4) 落到 mysql；同时输出按表统计供 PHP 显示
         tmp=$(mktemp); trap 'rm -f "${tmp}"' EXIT
-        grep -E '^INSERT (IGNORE )?INTO `?(i_users|i_domains|i_aliases|i_bcc_user|i_quota|i_day_record)`?' \
+
+        existing=$(mysql -uroot -N -B ewomail -e "
+            SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME IN ('i_users','i_domains','i_aliases','i_bcc_user','i_quota','i_day_record')
+        ")
+        if [[ -z "${existing}" ]]; then
+            echo "ERROR: 目标数据库里找不到任何邮件业务表，请确认 install.sql 已执行" >&2
+            exit 1
+        fi
+        # 把多行表名拼成 regex alternation
+        pattern=$(printf '%s\n' "${existing}" | tr '\n' '|' | sed 's/|$//')
+
+        grep -E "^INSERT (IGNORE )?INTO \`?(${pattern})\`?" \
             | sed -E 's/^INSERT INTO /INSERT IGNORE INTO /' > "${tmp}" || true
         if [[ ! -s "${tmp}" ]]; then
-            echo "ERROR: SQL 中找不到任何可识别的 INSERT 语句（白名单：i_users/i_domains/i_aliases/i_bcc_user/i_quota/i_day_record）" >&2
+            echo "ERROR: SQL 中找不到任何可识别的 INSERT 语句。本机可写入的表：${existing//$'\n'/, }" >&2
             exit 1
         fi
         # 先按表统计要插入的行数，给前端展示

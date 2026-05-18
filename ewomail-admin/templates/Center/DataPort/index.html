@@ -9,12 +9,12 @@
             <table class="table">
                 <thead><tr><th>表</th><th>说明</th><th width="120" align="right">行数</th></tr></thead>
                 <tbody>
-                    <tr><td><code>i_users</code></td>     <td>邮箱用户</td>      <td align="right">{$stats.i_users}</td></tr>
-                    <tr><td><code>i_domains</code></td>   <td>邮件域名</td>      <td align="right">{$stats.i_domains}</td></tr>
-                    <tr><td><code>i_aliases</code></td>   <td>邮箱别名</td>      <td align="right">{$stats.i_aliases}</td></tr>
-                    <tr><td><code>i_bcc_user</code></td>  <td>邮件转发</td>      <td align="right">{$stats.i_bcc_user}</td></tr>
-                    <tr><td><code>i_quota</code></td>     <td>邮箱配额使用</td>  <td align="right">{$stats.i_quota}</td></tr>
-                    <tr><td><code>i_day_record</code></td><td>每日收发统计</td>  <td align="right">{$stats.i_day_record}</td></tr>
+                    <tr><td><code>i_users</code></td>     <td>邮箱用户</td>      <td align="right">{if $stats.i_users     === null}<em style="color:#bbb">— 表不存在</em>{else}{$stats.i_users}{/if}</td></tr>
+                    <tr><td><code>i_domains</code></td>   <td>邮件域名</td>      <td align="right">{if $stats.i_domains   === null}<em style="color:#bbb">— 表不存在</em>{else}{$stats.i_domains}{/if}</td></tr>
+                    <tr><td><code>i_aliases</code></td>   <td>邮箱别名</td>      <td align="right">{if $stats.i_aliases   === null}<em style="color:#bbb">— 表不存在</em>{else}{$stats.i_aliases}{/if}</td></tr>
+                    <tr><td><code>i_bcc_user</code></td>  <td>邮件转发</td>      <td align="right">{if $stats.i_bcc_user  === null}<em style="color:#bbb">— 表不存在</em>{else}{$stats.i_bcc_user}{/if}</td></tr>
+                    <tr><td><code>i_quota</code></td>     <td>邮箱配额使用</td>  <td align="right">{if $stats.i_quota     === null}<em style="color:#bbb">— 表不存在</em>{else}{$stats.i_quota}{/if}</td></tr>
+                    <tr><td><code>i_day_record</code></td><td>每日收发统计</td>  <td align="right">{if $stats.i_day_record === null}<em style="color:#bbb">— 表不存在</em>{else}{$stats.i_day_record}{/if}</td></tr>
                 </tbody>
             </table>
         </div>

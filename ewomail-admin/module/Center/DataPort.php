@@ -21,10 +21,28 @@ const _IMPORT_MAX    = 32 * 1024 * 1024;  // 32 MB —— 邮件元数据再多�
 Rout::get('index', function () {
     Admin::setMenu(106, '数据导入/导出');
 
-    // 给前端显示当前各表的行数，便于用户确认导入会不会和现有数据混。
+    // i_day_record 不在 install.sql 里，老 EwoMail 也只在某些组件首次写入时
+    // 才会自动建。所以全新装的 EwoMail-plus 上这张表可能不存在；不能盲目
+    // count，否则 PDO 抛 Table doesn't exist 一路冒泡到 E::sys 整页 500。
+    $existing = [];
+    $rows = App::$db->select(
+        "select TABLE_NAME from INFORMATION_SCHEMA.TABLES " .
+        "where TABLE_SCHEMA = DATABASE() and TABLE_NAME in ('" .
+        implode("','", _IMPORT_TABLES) . "')"
+    );
+    if (is_array($rows)) {
+        foreach ($rows as $r) {
+            // PDO 配了 ATTR_CASE = CASE_LOWER，列名是小写
+            $name = isset($r['table_name']) ? $r['table_name'] : null;
+            if ($name) $existing[$name] = true;
+        }
+    }
+
     $stats = [];
     foreach (_IMPORT_TABLES as $t) {
-        $stats[$t] = (int)App::$db->count("select count(*) from `" . $t . "`");
+        $stats[$t] = isset($existing[$t])
+            ? (int)App::$db->count("select count(*) from `" . $t . "`")
+            : null;  // null = 表不存在，模板里显示 "—"
     }
     Tp::assign(['stats' => $stats]);
     Tp::display();
