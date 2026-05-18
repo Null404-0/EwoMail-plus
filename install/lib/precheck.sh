@@ -192,3 +192,67 @@ EOF
         [[ "${cont}" != "yes" ]] && { ui_err "已中止。"; exit 1; }
     fi
 }
+
+# 验 nginx.org 可达 —— 我们硬性要求装 1.30+（CVE-2026-42945 修复后版本）。
+# 这一项失败意味着出向 HTTPS 到 nginx.org:443 不通，必须先排查（防火墙、
+# DNS、IPv6-only 网络等），不再静默回退到 Debian 自带的 1.22。
+# 如确实没条件升级，可 EWO_ALLOW_NGINX_OLD=1 ./install.sh 跳过此检查。
+precheck_nginx_org() {
+    if [[ "${EWO_ALLOW_NGINX_OLD:-0}" == "1" ]]; then
+        ui_warn "EWO_ALLOW_NGINX_OLD=1：跳过 nginx.org 可达性检查，将使用 Debian 自带 nginx 1.22"
+        ui_warn "  → 1.22 不含 CVE-2026-42945 的修复，建议装完后用面板 UI 升级"
+        return 0
+    fi
+    if [[ "${EWO_SKIP_PRECHECK:-0}" == "1" ]]; then
+        ui_warn "EWO_SKIP_PRECHECK=1：跳过 nginx.org 可达性检查"
+        return 0
+    fi
+
+    ui_info "检查 nginx.org 可达性（HTTPS）……"
+    local key_url="https://nginx.org/keys/nginx_signing.key"
+    # 顺便验证 nginx.org 是否给当前 Debian codename 提供了仓库 ——
+    # 极少数情况下 Debian 13 (trixie) 刚发布、nginx.org 还没跟上，这时
+    # 装到 apt-get update 才报 404 太晚。这里提前查 Release 文件。
+    local release_url="https://nginx.org/packages/debian/dists/${EWO_OS_CODENAME}/Release"
+    local attempts=3 i ok=0
+    for i in 1 2 3; do
+        if curl -fsS --connect-timeout 10 --max-time 30 -o /dev/null "${key_url}" 2>>"${LOG_FILE}"; then
+            ok=1; break
+        fi
+        [[ $i -lt $attempts ]] && sleep $((i * 2))
+    done
+
+    if [[ $ok -ne 1 ]]; then
+        ui_err "无法访问 ${key_url}（重试 ${attempts} 次都失败）。"
+        cat <<EOF
+${UI_BOLD}可能原因${UI_RESET}：
+  • 出向 HTTPS（端口 443）被网络/防火墙阻塞
+  • DNS 解析问题（试试 ${UI_CYAN}dig +short nginx.org${UI_RESET}）
+  • VPS 是纯 IPv6 网络（nginx.org 主要解析 IPv4）
+  • nginx.org 暂时不可达（${UI_CYAN}https://status.nginx.org${UI_RESET}）
+
+EwoMail-plus 默认强制装 nginx 1.30+（修复了 CVE-2026-42945）。
+排查方法：
+  ${UI_CYAN}curl -v https://nginx.org/keys/nginx_signing.key${UI_RESET}
+
+如确实没条件升级，可放弃 1.30 用 Debian 自带 1.22 装（不推荐）：
+  ${UI_CYAN}EWO_ALLOW_NGINX_OLD=1 ./install.sh${UI_RESET}
+EOF
+        exit 1
+    fi
+    ui_ok "nginx.org 可达"
+
+    # 再验下 ${EWO_OS_CODENAME} 有没有对应的仓库（防 trixie 这种新版本还没上）
+    if ! curl -fsS --connect-timeout 10 --max-time 30 -o /dev/null "${release_url}" 2>>"${LOG_FILE}"; then
+        ui_err "$(printf 'nginx.org 没有为 Debian %s (%s) 提供仓库：\n  %s\n' "${EWO_OS_VER}" "${EWO_OS_CODENAME}" "${release_url}")"
+        cat <<EOF
+可能是该 Debian 版本太新（nginx.org 还没跟上）或太旧。
+${UI_BOLD}解决办法${UI_RESET}：
+  • 等几周，nginx.org 通常会跟上新版本
+  • 或换成 Debian 12 (bookworm) 安装
+  • 或 ${UI_CYAN}EWO_ALLOW_NGINX_OLD=1 ./install.sh${UI_RESET} 用 Debian 自带 1.22（不推荐）
+EOF
+        exit 1
+    fi
+    ui_ok "nginx.org 对 Debian ${EWO_OS_VER} (${EWO_OS_CODENAME}) 提供仓库"
+}

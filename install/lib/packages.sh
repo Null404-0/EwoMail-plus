@@ -1,27 +1,82 @@
 # Installs system packages from Debian repositories only.
 
 setup_nginx_org_repo() {
-    # Add nginx.org's stable APT repository and pin so that `nginx` resolves
-    # to the upstream package, not Debian's 1.22.1.
+    # 把 nginx.org stable 源加进 apt，并 pin 到 priority 900，让 `apt install
+    # nginx` 永远走 nginx.org（一般是 1.30.x），不走 Debian 自带的 1.22.1。
+    # CVE-2026-42945 的修复在 1.30.1 / 1.31.0 起，所以 1.22 是硬要避免的。
+    #
+    # 失败处理：之前是静默回退到 Debian 自带，结果用户装完拿到 1.22 自己都
+    # 不知道。现在硬失败 —— precheck_nginx_org 已经在 confirm 之前验过可达，
+    # 这里再失败说明是 curl/gpg 工具坏了或 keyrings 目录有问题，需要排查。
+    if [[ "${EWO_ALLOW_NGINX_OLD:-0}" == "1" ]]; then
+        ui_warn "EWO_ALLOW_NGINX_OLD=1：跳过 nginx.org 源配置，将使用 Debian 自带 nginx 1.22"
+        return 0
+    fi
+
     install -d -m 0755 /etc/apt/keyrings
     if [[ ! -f /etc/apt/keyrings/nginx.gpg ]]; then
-        if ! curl -fsSL https://nginx.org/keys/nginx_signing.key 2>>"${LOG_FILE}" \
-              | gpg --dearmor -o /etc/apt/keyrings/nginx.gpg 2>>"${LOG_FILE}"; then
-            ui_warn "无法获取 nginx.org 签名密钥，回退到 Debian 自带 nginx（1.22）。"
-            return 0
+        local attempts=3 i ok=0 tmp_key
+        tmp_key=$(mktemp)
+        for i in 1 2 3; do
+            if curl -fsSL --connect-timeout 10 --max-time 30 \
+                    -o "${tmp_key}" \
+                    https://nginx.org/keys/nginx_signing.key 2>>"${LOG_FILE}"; then
+                # 校验下载下来的内容确实是 ASCII-armored PGP key
+                if [[ -s "${tmp_key}" ]] && head -1 "${tmp_key}" | grep -q 'BEGIN PGP PUBLIC KEY'; then
+                    if gpg --dearmor -o /etc/apt/keyrings/nginx.gpg < "${tmp_key}" 2>>"${LOG_FILE}"; then
+                        ok=1; break
+                    fi
+                fi
+            fi
+            [[ $i -lt $attempts ]] && {
+                ui_dim "nginx.org 密钥获取失败（${i}/${attempts}），${i}s 后重试……"
+                sleep $((i * 2))
+            }
+        done
+        rm -f "${tmp_key}"
+        if [[ $ok -ne 1 ]]; then
+            ui_err "$(printf '获取 nginx.org 签名密钥失败（重试 %s 次都没成功）。\n详细日志见 %s。\n如需用 Debian 自带 1.22 装：EWO_ALLOW_NGINX_OLD=1 ./install.sh\n' "$attempts" "${LOG_FILE}")"
+            return 1
         fi
         chmod 0644 /etc/apt/keyrings/nginx.gpg
     fi
+
     cat > /etc/apt/sources.list.d/nginx-stable.list <<EOF
 deb [signed-by=/etc/apt/keyrings/nginx.gpg] https://nginx.org/packages/debian ${EWO_OS_CODENAME} nginx
 EOF
-    # Pin so Debian's nginx never wins; nginx.org's package is always preferred.
     cat > /etc/apt/preferences.d/nginx-stable <<'EOF'
 Package: nginx
 Pin: origin nginx.org
 Pin-Priority: 900
 EOF
     ui_ok "已配置 nginx.org stable 源（${EWO_OS_CODENAME}）"
+    return 0
+}
+
+# 安装后验一下 nginx 是不是 nginx.org 那份（1.30+），不是就 fatal。
+# 之所以放在 install_apt_packages 末尾而不是 nginx.sh：是要在 apt 流程
+# 直接退出前发现问题，方便用户在排查阶段就能看到。
+verify_nginx_version() {
+    if [[ "${EWO_ALLOW_NGINX_OLD:-0}" == "1" ]]; then
+        return 0
+    fi
+    if ! command -v nginx >/dev/null 2>&1; then
+        ui_err "未找到 nginx 可执行文件，apt 安装可能没完成。"
+        return 1
+    fi
+    local ver
+    ver=$(nginx -v 2>&1 | sed -E 's/^nginx version: nginx\///; s/ .*$//')
+    if [[ -z "${ver}" ]]; then
+        ui_warn "无法解析 nginx 版本，跳过校验"
+        return 0
+    fi
+    # 1.22/1.18/1.14 都是 Debian 自带版本（不同 Debian 版本），全部拒收
+    if [[ "${ver}" =~ ^1\.(22|18|14|10|6|4)\. ]]; then
+        ui_err "$(printf '装上的 nginx 是 %s（Debian 自带版本），不是预期的 nginx.org stable。\nnginx.org pin 可能没生效，请检查：\n  apt-cache policy nginx\n  cat /etc/apt/preferences.d/nginx-stable\n  cat /etc/apt/sources.list.d/nginx-stable.list\n' "$ver")"
+        return 1
+    fi
+    ui_ok "nginx 版本：${ver}（来自 nginx.org）"
+    return 0
 }
 
 install_apt_packages() {
@@ -33,7 +88,10 @@ install_apt_packages() {
 
     # Pull nginx from nginx.org's stable channel — Debian 12 ships 1.22.1
     # which is below the CVE-2026-42945 fix boundary (1.30.1 / 1.31.0).
-    setup_nginx_org_repo
+    if ! setup_nginx_org_repo; then
+        ui_err "nginx.org 源配置失败，无法继续。"
+        return 1
+    fi
 
     ui_info "刷新 apt 软件源索引"
     run_stream apt-get update
@@ -95,6 +153,10 @@ EOF
 
     run_stream apt-get install -y --no-install-recommends "${packages[@]}"
     ui_ok "所有软件包已安装"
+
+    if ! verify_nginx_version; then
+        return 1
+    fi
 
     # Stop services we will reconfigure; we start them again at the end.
     # SpamAssassin's systemd unit on Debian 12 is spamassassin.service (the

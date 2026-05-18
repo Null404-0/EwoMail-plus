@@ -65,6 +65,7 @@ main() {
     prompt_swap
 
     precheck_dns "${EWO_DOMAIN}"
+    precheck_nginx_org
     confirm_proceed
 
     generate_credentials
