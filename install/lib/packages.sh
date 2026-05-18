@@ -15,19 +15,21 @@ setup_nginx_org_repo() {
 
     install -d -m 0755 /etc/apt/keyrings
     if [[ ! -f /etc/apt/keyrings/nginx.gpg ]]; then
-        local attempts=3 i ok=0 tmp_key
+        local attempts=3 i ok=0 tmp_key curl_mode
         tmp_key=$(mktemp)
         for i in 1 2 3; do
-            if curl -fsSL --connect-timeout 10 --max-time 30 \
-                    -o "${tmp_key}" \
-                    https://nginx.org/keys/nginx_signing.key 2>>"${LOG_FILE}"; then
-                # 校验下载下来的内容确实是 ASCII-armored PGP key
-                if [[ -s "${tmp_key}" ]] && head -1 "${tmp_key}" | grep -q 'BEGIN PGP PUBLIC KEY'; then
-                    if gpg --dearmor -o /etc/apt/keyrings/nginx.gpg < "${tmp_key}" 2>>"${LOG_FILE}"; then
-                        ok=1; break
+            for curl_mode in "-4" ""; do
+                if curl -fsSL ${curl_mode} --connect-timeout 10 --max-time 30 \
+                        -o "${tmp_key}" \
+                        https://nginx.org/keys/nginx_signing.key 2>>"${LOG_FILE}"; then
+                    # 校验下载下来的内容确实是 ASCII-armored PGP key
+                    if [[ -s "${tmp_key}" ]] && head -1 "${tmp_key}" | grep -q 'BEGIN PGP PUBLIC KEY'; then
+                        if gpg --dearmor -o /etc/apt/keyrings/nginx.gpg < "${tmp_key}" 2>>"${LOG_FILE}"; then
+                            ok=1; break 2
+                        fi
                     fi
                 fi
-            fi
+            done
             [[ $i -lt $attempts ]] && {
                 ui_dim "nginx.org 密钥获取失败（${i}/${attempts}），${i}s 后重试……"
                 sleep $((i * 2))

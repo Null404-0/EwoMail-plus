@@ -291,7 +291,8 @@ case "${cmd}" in
         if [[ ! -f /etc/apt/sources.list.d/nginx-stable.list ]]; then
             echo "step=adding-nginx-org-repo"
             install -d -m 0755 /etc/apt/keyrings
-            if ! curl -fsSL https://nginx.org/keys/nginx_signing.key \
+            if ! (curl -fsSL -4 https://nginx.org/keys/nginx_signing.key \
+                    || curl -fsSL https://nginx.org/keys/nginx_signing.key) \
                     | gpg --dearmor -o /etc/apt/keyrings/nginx.gpg 2>&1; then
                 echo "ERROR: 获取 nginx.org 签名密钥失败（网络问题？）" >&2
                 rollback; exit 2

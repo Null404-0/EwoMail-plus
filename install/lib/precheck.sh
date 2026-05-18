@@ -214,11 +214,13 @@ precheck_nginx_org() {
     # 极少数情况下 Debian 13 (trixie) 刚发布、nginx.org 还没跟上，这时
     # 装到 apt-get update 才报 404 太晚。这里提前查 Release 文件。
     local release_url="https://nginx.org/packages/debian/dists/${EWO_OS_CODENAME}/Release"
-    local attempts=3 i ok=0
+    local attempts=3 i ok=0 curl_mode
     for i in 1 2 3; do
-        if curl -fsS --connect-timeout 10 --max-time 30 -o /dev/null "${key_url}" 2>>"${LOG_FILE}"; then
-            ok=1; break
-        fi
+        for curl_mode in "-4" ""; do
+            if curl -fsS ${curl_mode} --connect-timeout 10 --max-time 30 -o /dev/null "${key_url}" 2>>"${LOG_FILE}"; then
+                ok=1; break 2
+            fi
+        done
         [[ $i -lt $attempts ]] && sleep $((i * 2))
     done
 
@@ -243,7 +245,8 @@ EOF
     ui_ok "nginx.org 可达"
 
     # 再验下 ${EWO_OS_CODENAME} 有没有对应的仓库（防 trixie 这种新版本还没上）
-    if ! curl -fsS --connect-timeout 10 --max-time 30 -o /dev/null "${release_url}" 2>>"${LOG_FILE}"; then
+    if ! curl -fsS -4 --connect-timeout 10 --max-time 30 -o /dev/null "${release_url}" 2>>"${LOG_FILE}" \
+       && ! curl -fsS --connect-timeout 10 --max-time 30 -o /dev/null "${release_url}" 2>>"${LOG_FILE}"; then
         ui_err "$(printf 'nginx.org 没有为 Debian %s (%s) 提供仓库：\n  %s\n' "${EWO_OS_VER}" "${EWO_OS_CODENAME}" "${release_url}")"
         cat <<EOF
 可能是该 Debian 版本太新（nginx.org 还没跟上）或太旧。
