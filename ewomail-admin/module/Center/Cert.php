@@ -73,14 +73,35 @@ Rout::put('issue', function () {
                       || strpos($r['out'], 'Skipping') !== false)) {
         E::error('该域名已有未到期的证书，无需重新申请。如需强制更新，请使用下方表格里的「续签」按钮。');
     }
-    $r['ok'] ? E::success('已签发，请点击「安装」部署到 Nginx/Postfix/Dovecot。') : E::error('acme.sh: ' . $r['out']);
+    // helper 在本地已有该证书时打了 reusing-existing-cert 标记，意味着
+    // 跳过了 --issue 直接做了 install——给用户一个更准确的提示文案。
+    if ($r['ok'] && strpos($r['out'], 'reusing-existing-cert') !== false) {
+        E::success('已复用并部署现有证书。');
+    } elseif ($r['ok']) {
+        E::success('已签发，请点击「安装」部署到 Nginx/Postfix/Dovecot。');
+    } else {
+        E::error('acme.sh: ' . $r['out']);
+    }
 });
 
 Rout::put('renew', function () {
     $d = trim(ipost('domain'));
     if (!Helper::validateFqdn($d)) E::error('域名格式无效');
     $r = Helper::run(['cert-renew', $d]);
-    $r['ok'] ? E::success('已续签。') : E::error('acme.sh: ' . $r['out']);
+    if ($r['ok']) {
+        E::success('已检查续签状态，并部署当前证书。');
+    } elseif (strpos($r['out'], 'Skip') !== false
+              || strpos($r['out'], 'Next renewal time') !== false
+              || strpos($r['out'], 'not due') !== false) {
+        // 证书还没到 acme.sh 默认的 60 天续签窗口，--renew 返回非零；
+        // 这不是失败——重新跑 cert-install 把现有证书铺一遍即可。
+        $install = Helper::run(['cert-install', $d]);
+        $install['ok']
+            ? E::success('证书尚未到续签时间，已重新部署当前证书。')
+            : E::error('acme.sh: ' . $r['out']);
+    } else {
+        E::error('acme.sh: ' . $r['out']);
+    }
 });
 
 Rout::put('install', function () {

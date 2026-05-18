@@ -76,6 +76,35 @@ valid_ipv4() {
 valid_fqdn()      { [[ "$1" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]]; }
 valid_site_name() { [[ "$1" =~ ^[a-zA-Z0-9._-]+\.conf$ && ! "$1" == *..* ]]; }
 valid_url_path()  { [[ "$1" =~ ^(adm|db)-[a-z0-9]+$ ]]; }    # for rotated paths
+acme_install_cert() {
+    local domain="$1"
+
+    # acme.sh 默认存 ECC；先试 --ecc，取不到再回退老 RSA 路径。
+    # reloadcmd 用 `|| true` 包每个 systemctl reload —— 即便某个服务（比如
+    # 用户暂时停了 dovecot）reload 失败，也不让 acme.sh 整体返回非零。
+    /root/.acme.sh/acme.sh --install-cert -d "${domain}" --ecc \
+        --key-file       /etc/ssl/ewomail/private/privkey.pem \
+        --fullchain-file /etc/ssl/ewomail/fullchain.pem \
+        --reloadcmd      "systemctl reload nginx 2>/dev/null || true; systemctl reload postfix 2>/dev/null || true; systemctl reload dovecot 2>/dev/null || true" \
+        || /root/.acme.sh/acme.sh --install-cert -d "${domain}" \
+        --key-file       /etc/ssl/ewomail/private/privkey.pem \
+        --fullchain-file /etc/ssl/ewomail/fullchain.pem \
+        --reloadcmd      "systemctl reload nginx 2>/dev/null || true; systemctl reload postfix 2>/dev/null || true; systemctl reload dovecot 2>/dev/null || true"
+}
+
+# 判断 acme.sh 本地账户是否已有该域名证书。返回 0 = 有；不调任何 LE API。
+acme_has_domain_cert() {
+    local domain="$1"
+    /root/.acme.sh/acme.sh --list --listraw 2>/dev/null | awk -F'|' -v d="${domain}" '
+        NR == 1 && $1 ~ /Main_Domain/ { next }
+        {
+            gsub(/^[ \t]+|[ \t.]+$/, "", $1)
+            if ($1 == d) found = 1
+        }
+        END { exit found ? 0 : 1 }
+    '
+}
+
 valid_service() {
     case "$1" in
         nginx|postfix|dovecot|amavis|spamassassin|clamav-daemon|clamav-freshclam|\
@@ -389,12 +418,27 @@ EOF
     # ---- Cert ----
     cert-issue)
         [[ $# -eq 1 ]] && valid_fqdn "$1" || usage
+        # 反复重装会撞 LE 的"5 个完全一样 FQDN 集合 / 周"限流。如果 acme.sh
+        # 本地已经有这张证书，就直接 install 部署，根本不碰 LE API。
+        # 输出"reusing-existing-cert"标记，让 PHP 端给用户区分提示。
+        if acme_has_domain_cert "$1"; then
+            echo "reusing-existing-cert"
+            acme_install_cert "$1"
+            exit 0
+        fi
         /root/.acme.sh/acme.sh --issue -d "$1" -w /ewomail/www/default --server letsencrypt
         ;;
     cert-renew)
         [[ $# -eq 1 ]] && valid_fqdn "$1" || usage
-        /root/.acme.sh/acme.sh --renew -d "$1" --force --ecc 2>/dev/null || \
-        /root/.acme.sh/acme.sh --renew -d "$1" --force
+        # 不带 --force：被强制续签时 acme.sh 会下一个新的 ACME order，
+        # 反复重装期间这是撞 LE 限流的主要途径之一。不带时 acme.sh 自己
+        # 决定是否到期；没到就退非零 + "Skip"/"Next renewal time" 提示，
+        # PHP 端会兜底改去跑 cert-install 重新部署当前证书。
+        if /root/.acme.sh/acme.sh --renew -d "$1" --ecc; then
+            acme_install_cert "$1"
+        elif /root/.acme.sh/acme.sh --renew -d "$1"; then
+            acme_install_cert "$1"
+        fi
         ;;
     cert-list)
         # --listraw modifies --list to use stable pipe-delimited columns:
@@ -414,10 +458,7 @@ EOF
         ;;
     cert-install)
         [[ $# -eq 1 ]] && valid_fqdn "$1" || usage
-        /root/.acme.sh/acme.sh --install-cert -d "$1" \
-            --key-file       /etc/ssl/ewomail/private/privkey.pem \
-            --fullchain-file /etc/ssl/ewomail/fullchain.pem \
-            --reloadcmd      "systemctl reload nginx; systemctl reload postfix; systemctl reload dovecot"
+        acme_install_cert "$1"
         ;;
 
     # ---- Service ----
