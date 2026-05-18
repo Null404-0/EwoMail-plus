@@ -49,6 +49,11 @@ setup_nginx_org_repo() {
     local keyring="/usr/share/keyrings/nginx-archive-keyring.gpg"
     install -d -m 0755 /usr/share/keyrings
 
+    # 老版本（PR #7 合并前）的 keyring 在 /etc/apt/keyrings/nginx.gpg。
+    # 现在 setup 不再读它，但留着会让 apt-key 列出无用的 keyring，干净起见
+    # 在这里清掉。文件已迁到 /usr/share/keyrings/nginx-archive-keyring.gpg。
+    rm -f /etc/apt/keyrings/nginx.gpg
+
     if ! _nginx_keyring_valid "${keyring}"; then
         local attempts=3 i ok=0 tmp_key tmp_ring fp_out
         tmp_key=$(mktemp)
@@ -87,9 +92,16 @@ setup_nginx_org_repo() {
     cat > /etc/apt/sources.list.d/nginx-stable.list <<EOF
 deb [signed-by=${keyring}] https://nginx.org/packages/debian ${EWO_OS_CODENAME} nginx
 EOF
+    # apt_preferences(5) 一条 record 只允许一个 Pin —— 写两个 Pin 时
+    # apt 行为未规范定义（大多数实现只用最后一个）。要让"origin nginx.org"
+    # 和"release o=nginx"两种匹配都生效，就拆成两条独立 record。
+    # 这俩 pin 等价（nginx.org 的 Release 文件里 Origin=nginx），任一命中即可。
     cat > /etc/apt/preferences.d/nginx-stable <<'EOF'
 Package: nginx
 Pin: origin nginx.org
+Pin-Priority: 900
+
+Package: nginx
 Pin: release o=nginx
 Pin-Priority: 900
 EOF
