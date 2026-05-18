@@ -341,11 +341,44 @@ EOF
             rollback; exit 5
         fi
 
-        # 6) reload
-        echo "step=reload"
-        if ! systemctl reload nginx 2>&1; then
-            # reload 失败时尝试 restart（有时 nginx 进程已经死了）
-            systemctl restart nginx 2>&1 || true
+        # 6) 重启 nginx：
+        # 之前这步只 reload + fallback restart 然后 || true 吃错误，结果：
+        #   apt 的 prerm 给老 nginx 发 SIGTERM 时，nginx workers 还在帮 PHP-FPM
+        #   转发"正在调 helper"的那个 ajax 请求（workers 等连接 drain）→ 5 秒
+        #   不退 → systemd SIGKILL → unit 进入 failed 状态。等 helper 跑到这里
+        #   时 nginx 进程根本不在了，reload 必然失败；restart 又撞上 systemd
+        #   的 "Device or resource busy"（unit 缓存没刷）。最后 || true 让
+        #   helper 假装成功退出，nginx 实际没起来 = 整站 502。
+        #
+        # 正确顺序：
+        #   a) daemon-reload —— 让 systemd 重新加载 nginx 的 unit 文件
+        #      （apt 装新版时可能换了内容）
+        #   b) reset-failed —— 清掉上面那个 SIGKILL 留下的 failed 状态
+        #   c) start —— 明确启动（不是 reload，进程已经死了）
+        #   d) is-active 轮询验证，确认真的起来；不然就 rollback
+        echo "step=daemon-reload"
+        systemctl daemon-reload 2>&1 || true
+        systemctl reset-failed nginx 2>&1 || true
+
+        echo "step=start"
+        if ! systemctl start nginx 2>&1; then
+            echo "ERROR: systemctl start nginx 失败" >&2
+            rollback; exit 6
+        fi
+
+        echo "step=verify"
+        sleep 1
+        ok=0
+        for i in 1 2 3 4 5 6 7 8; do
+            if systemctl is-active --quiet nginx; then
+                ok=1; break
+            fi
+            sleep 1
+        done
+        if [[ $ok -ne 1 ]]; then
+            echo "ERROR: nginx 启动后未保持 active 状态" >&2
+            journalctl -u nginx -n 20 --no-pager 2>&1 || true
+            rollback; exit 7
         fi
 
         new_ver=$(nginx -v 2>&1 | sed -E 's/^nginx version: nginx\///; s/ .*$//')

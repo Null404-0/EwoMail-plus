@@ -49,8 +49,15 @@ Rout::get('index', function () {
 
 Rout::put('upgrade', function () {
     // 升级动作较重（apt-get update + install + reload），可能耗时 1-3 分钟。
-    // 前端 ajax timeout 必须给够，否则会断给用户假超时（参考 Cert 模块的
-    // pLong helper）。
+    // 升级过程中 nginx 会被 apt 强杀重启 → 浏览器和 PHP-FPM 之间的 FCGI
+    // 连接也跟着断。两件事必须做：
+    //   1) ignore_user_abort(true)：连接断了 PHP 还接着跑，让 helper 把
+    //      apt install + start nginx 跑完，不至于停在半路
+    //   2) set_time_limit(0)：取消 max_execution_time（默认 30s 太短），
+    //      apt 装大包能跑到底
+    @ignore_user_abort(true);
+    @set_time_limit(0);
+
     $r = Helper::run(['nginx-upgrade']);
     // 把 helper 输出按行拆开，前端展示 step= 和 version= 等关键字段；
     // 但完整输出（含 apt 进度）也透传过去，方便排查。
