@@ -13,7 +13,7 @@
  */
 
 if(!defined("PATH")) exit;
-error_reporting(E_ALL & ~E_NOTICE);
+error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED & ~E_USER_DEPRECATED & ~E_STRICT);
 header("Content-type: text/html; charset=utf-8");
 include PATH.'/core/functions.php';
 include PATH.'/lib/smarty-3.1.35/libs/Smarty.class.php';
