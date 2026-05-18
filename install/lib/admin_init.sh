@@ -58,6 +58,21 @@ REPLACE INTO i_panel_setting VALUES
   ('mail_host',       '${EWO_MAIL_HOST}'),
   ('public_ip',       '${EWO_PUBLIC_IP:-}'),
   ('le_email',        '${EWO_ADMIN_EMAIL}');
+
+-- i_day_record 在原 EwoMail install.sql 里漏掉了 —— 老版本是某个独立组件
+-- 首次写入时才隐式建表，PHP 这边 Users.php 的"收发数量"页和清零按钮
+-- 直接 SELECT/UPDATE 这张表。表不存在 → PDO 抛 Table doesn't exist →
+-- E::sys 整页 500。schema 按 PHP 代码引用的列推出来。
+CREATE TABLE IF NOT EXISTS i_day_record (
+    day_id INT NOT NULL AUTO_INCREMENT,
+    email  VARCHAR(100) NOT NULL,
+    day    DATE NOT NULL,
+    s_num  INT NOT NULL DEFAULT 0 COMMENT '当日发送数',
+    c_num  INT NOT NULL DEFAULT 0 COMMENT '当日接收数',
+    PRIMARY KEY (day_id),
+    UNIQUE KEY uniq_email_day (email, day),
+    KEY idx_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='每日收发统计';
 EOF
 
     # Privilege helper used by Firewall/Nginx/Cert modules.

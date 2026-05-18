@@ -286,6 +286,20 @@ CREATE TABLE IF NOT EXISTS i_panel_setting (
     value TEXT NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 原 EwoMail install.sql 漏建 i_day_record（老版本是某个独立组件首次写入
+-- 时才隐式建表），PHP 直接 SELECT/UPDATE 这张表，缺了会 500。
+-- 现存安装跑到这里时如果已有该表（数据完好）就跳过。
+CREATE TABLE IF NOT EXISTS i_day_record (
+    day_id INT NOT NULL AUTO_INCREMENT,
+    email  VARCHAR(100) NOT NULL,
+    day    DATE NOT NULL,
+    s_num  INT NOT NULL DEFAULT 0 COMMENT '当日发送数',
+    c_num  INT NOT NULL DEFAULT 0 COMMENT '当日接收数',
+    PRIMARY KEY (day_id),
+    UNIQUE KEY uniq_email_day (email, day),
+    KEY idx_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='每日收发统计';
+
 INSERT IGNORE INTO i_admin_menu (menu_id, mark, lang, url, top_id, edit, del, edit_id, sort) VALUES
   (106, '数据导入/导出','数据导入/导出','/DataPort', 100, 0, 0, 0, 10),
   (207, 'Webmail 品牌','Webmail 品牌','/System/webmail-config', 200, 1, 0, 0, 40),
