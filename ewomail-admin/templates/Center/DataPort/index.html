@@ -1,0 +1,129 @@
+{include file="$HOME/header.html"}
+<div class="admin">
+
+    <div class="panel admin-panel">
+        <div class="panel-head"><strong>当前数据</strong>
+            <em style="font-weight:normal;color:#888;font-size:13px;margin-left:10px">导入前确认下不会和已有数据冲突</em>
+        </div>
+        <div class="padding">
+            <table class="table">
+                <thead><tr><th>表</th><th>说明</th><th width="120" align="right">行数</th></tr></thead>
+                <tbody>
+                    <tr><td><code>i_users</code></td>     <td>邮箱用户</td>      <td align="right">{$stats.i_users}</td></tr>
+                    <tr><td><code>i_domains</code></td>   <td>邮件域名</td>      <td align="right">{$stats.i_domains}</td></tr>
+                    <tr><td><code>i_aliases</code></td>   <td>邮箱别名</td>      <td align="right">{$stats.i_aliases}</td></tr>
+                    <tr><td><code>i_bcc_user</code></td>  <td>邮件转发</td>      <td align="right">{$stats.i_bcc_user}</td></tr>
+                    <tr><td><code>i_quota</code></td>     <td>邮箱配额使用</td>  <td align="right">{$stats.i_quota}</td></tr>
+                    <tr><td><code>i_day_record</code></td><td>每日收发统计</td>  <td align="right">{$stats.i_day_record}</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel admin-panel" style="margin-top:14px">
+        <div class="panel-head"><strong>导出</strong></div>
+        <div class="padding">
+            <p style="color:#666">把当前所有邮件数据导出为 SQL 文件（纯 INSERT 语句，<strong>不含 schema</strong>）。
+                文件兼容 <strong>老版 EwoMail</strong> 和 <strong>新版 EwoMail-plus</strong>：丢到任何一边的 mysql 里都能跑。
+                不包含管理员账号 / 面板设置 / 收发日志。</p>
+            <a href="{U('DataPort/export')}" class="button bg-main">下载 SQL 备份</a>
+        </div>
+    </div>
+
+    <div class="panel admin-panel" style="margin-top:14px">
+        <div class="panel-head"><strong>导入</strong>
+            <em style="font-weight:normal;color:#888;font-size:13px;margin-left:10px">
+                支持新版本导出 + 老版 EwoMail mysqldump
+            </em>
+        </div>
+        <div class="padding">
+            <form id="import-form" enctype="multipart/form-data">
+                <div class="form-group">
+                    <div class="label"><label>SQL 文件</label></div>
+                    <div class="field">
+                        <input type="file" name="sqlfile" accept=".sql,.txt,text/plain" required>
+                        <em style="color:#888;margin-left:8px">最大 32 MB</em>
+                    </div>
+                </div>
+                <div class="form-button">
+                    <button type="submit" class="button bg-main">开始导入</button>
+                </div>
+            </form>
+            <div style="margin-top:12px;color:#666;line-height:1.7">
+                <p><strong>导入策略</strong>（v1 固定，不可改）：</p>
+                <ul style="margin-left:20px">
+                    <li><code>INSERT INTO ...</code> 会被改写成 <code>INSERT IGNORE INTO ...</code> ——
+                        <strong>已存在的 email / 域名不会被覆盖</strong>。需要替换的话先到「邮件列表」里删旧的。</li>
+                    <li>只挑下面 6 张表的 INSERT 语句：
+                        <code>i_users</code> / <code>i_domains</code> / <code>i_aliases</code> /
+                        <code>i_bcc_user</code> / <code>i_quota</code> / <code>i_day_record</code>。
+                        其他表（管理员、菜单、系统配置等）一律丢弃，不会污染面板。</li>
+                    <li>不处理邮件正文文件（<code>/ewomail/mail/vmail/...</code>）。如果你在迁移整个服务器，需要另外 rsync 邮件目录过来。</li>
+                </ul>
+                <p><strong>老版 EwoMail 迁移流程</strong>：
+                    在老服务器上 <code>mysqldump -uroot ewomail &gt; old.sql</code>，把 old.sql 上传到这里，
+                    然后从老服务器 rsync 邮件目录：
+                    <code>rsync -avz old-server:/ewomail/mail/vmail/ /ewomail/mail/vmail/</code>。
+                    重启 dovecot 即可。</p>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+var IMPORT_URL = '{U("DataPort/import")}';
+{literal}
+$(function () {
+    $("#import-form").on('submit', function (e) {
+        e.preventDefault();
+        var f = this;
+        if (!f.sqlfile.files || !f.sqlfile.files[0]) {
+            layer.alert('请先选择 SQL 文件'); return;
+        }
+        var size = f.sqlfile.files[0].size;
+        if (size > 32 * 1024 * 1024) {
+            layer.alert('文件超过 32 MB 上限'); return;
+        }
+        if (!confirm('确认导入这个 SQL 文件？\n冲突时会跳过（INSERT IGNORE），不会覆盖现有数据。')) return;
+
+        var fd = new FormData(f);
+        fd.append('_method', 'put');
+        var ii = layer.load(2);
+        $.ajax({
+            url: IMPORT_URL,
+            type: 'POST',
+            data: fd,
+            processData: false,
+            contentType: false,
+            dataType: 'json',
+            timeout: 180000
+        }).done(function (j) {
+            layer.close(ii);
+            if (!j || typeof j.status === 'undefined') { layer.alert('响应异常'); return; }
+            if (j.status == 0) { layer.alert(j.msg || '失败'); return; }
+            var per = j.data || {};
+            var lines = Object.keys(per).map(function (k) {
+                return k + '：' + per[k] + ' 条';
+            });
+            var msg = '<div style="padding:14px;min-width:380px">' +
+                '<p><strong>' + $("<div>").text(j.msg).html() + '</strong></p>' +
+                (lines.length ? '<ul style="margin-left:20px;line-height:1.8">' +
+                    lines.map(function (l) { return '<li>' + l + '</li>'; }).join('') + '</ul>'
+                  : '<p style="color:#888">（文件中未识别到任何业务表 INSERT）</p>') +
+                '<p style="margin-top:10px;color:#888;font-size:12px">提示：上面是 SQL 中 INSERT IGNORE 行数；如果有已存在的 email 行会被跳过，实际新增行数可能略小。</p>' +
+                '</div>';
+            layer.open({
+                type: 1, area: ['auto'], title: '导入完成', shadeClose: true,
+                content: msg,
+                end: function () { location.reload(); }
+            });
+        }).fail(function (xhr, status) {
+            layer.close(ii);
+            layer.alert(status === 'timeout' ? '导入超时（>3 分钟）。可能数据量大；后端可能仍在执行，过会刷新看行数。' : '请求失败：' + status);
+        });
+    });
+});
+{/literal}
+</script>
+{include file="$HOME/footer.html"}

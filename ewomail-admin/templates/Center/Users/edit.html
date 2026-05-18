@@ -1,5 +1,8 @@
 {include file="$HOME/header.html"}
 <div class="admin">
+	<div class="panel admin-panel" style="margin-bottom:14px">
+		<div class="panel-head"><strong>{if $row}编辑邮箱{else}单个邮箱{/if}</strong></div>
+		<div class="padding">
 	<form method="post" class="form-x" action="" id="myform">
 
 		<div class="form-group">
@@ -82,6 +85,81 @@
 			<button class="button bg-main" type="submit" id="mysubmit">{$L.1108}</button>
 		</div>
 	</form>
+		</div>
+	</div>
+
+	{if !$row}
+	<div class="panel admin-panel" style="margin-bottom:14px">
+		<div class="panel-head"><strong>批量添加邮箱</strong>
+			<em style="font-weight:normal;color:#888;font-size:13px;margin-left:10px">
+				根据规则随机生成用户名，一次最多 500 个
+			</em>
+		</div>
+		<div class="padding">
+			<form class="form-x" id="batchform">
+				<div class="form-group">
+					<div class="label"><label>邮件域名</label></div>
+					<div class="field">
+						<select name="domain" class="input" style="width:280px" required>
+							<option value="">-- 请选择 --</option>
+							{foreach from=$domains item=d}
+								<option value="{$d.name}">{$d.name}</option>
+							{/foreach}
+						</select>
+						<em style="color:#888;margin-left:8px">未启用的域名也会列出来，建议先启用</em>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<div class="label"><label>数量</label></div>
+					<div class="field">
+						<input type="number" name="quantity" value="10" min="1" max="500" class="input" style="width:120px" required>
+						<em style="color:#888;margin-left:8px">一次 1-500 个</em>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<div class="label"><label>用户名规则</label></div>
+					<div class="field">
+						<input type="number" name="letters" value="5" min="0" max="32" class="input" style="width:80px"> 字母 +
+						<input type="number" name="digits"  value="5" min="0" max="32" class="input" style="width:80px"> 数字
+						<label style="margin-left:14px"><input type="checkbox" name="mixed" value="1"> 打乱字母 / 数字顺序</label>
+						<br>
+						<em style="color:#888">总长度 3-32 字符；字符池已排除易混淆的 0/O/1/l/I</em>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<div class="label"><label>密码模式</label></div>
+					<div class="field">
+						<div class="button-group button-group-small radio">
+							<label class="button active">
+								<input type="radio" name="pwd_mode" value="shared" checked>
+								<span class="icon icon-check"></span>统一自定义密码
+							</label>
+							<label class="button">
+								<input type="radio" name="pwd_mode" value="random">
+								<span class="icon icon-check"></span>每个账号独立 16 位强密码
+							</label>
+						</div>
+					</div>
+				</div>
+
+				<div class="form-group" id="batch-pwd-row">
+					<div class="label"><label>统一密码</label></div>
+					<div class="field">
+						<input type="text" name="password" class="input" style="width:280px" placeholder="8-64 字符，本批所有账号共用">
+					</div>
+				</div>
+
+				<div class="form-button">
+					<button type="submit" class="button bg-main">开始批量生成</button>
+					<em style="color:#888;margin-left:14px">生成结束后弹窗显示账号 + 密码，请立即下载备份；离开页面后无法再次获取明文。</em>
+				</div>
+			</form>
+		</div>
+	</div>
+	{/if}
 	<script>
 		$(function(){
 			
@@ -119,8 +197,92 @@
 			$("input[name='limits'][value='"+limits+"']").trigger("change").trigger("click");
 			$("input[name='limitg'][value='"+limitg+"']").trigger("change").trigger("click");
 
+			// ---- 批量添加 ----
+			var BATCH_URL = '{U("/Users/batch-add")}';
+			function togglePwdRow() {
+				var mode = $("input[name='pwd_mode']:checked").val();
+				$("#batch-pwd-row").toggle(mode === 'shared');
+			}
+			$("input[name='pwd_mode']").on('change', togglePwdRow);
+			togglePwdRow();
+
+			$("#batchform").on('submit', function (e) {
+				e.preventDefault();
+				var $form = $(this);
+				var data = $form.serialize() + '&_method=put';
+				if (!$form.find("select[name='domain']").val()) {
+					layer.alert('请选择域名'); return;
+				}
+				var qty = parseInt($form.find("input[name='quantity']").val(), 10);
+				if (!(qty >= 1 && qty <= 500)) { layer.alert('数量需在 1-500'); return; }
+				if (!confirm('确认生成 ' + qty + ' 个邮箱？\n生成后会直接写入数据库，无法批量撤销。')) return;
+
+				var ii = layer.load(2);
+				$.ajax({
+					url: BATCH_URL, type: 'POST', data: data, dataType: 'json',
+					timeout: 120000  // 大批量可能要十几秒
+				}).done(function (j) {
+					layer.close(ii);
+					if (!j || typeof j.status === 'undefined') { layer.alert('响应异常'); return; }
+					if (j.status == 0) { layer.alert(j.msg || '失败'); return; }
+					showBatchResult(j.msg, j.data || []);
+				}).fail(function (xhr, status) {
+					layer.close(ii);
+					layer.alert(status === 'timeout' ? '操作超时，请减小数量重试' : '请求失败：' + status);
+				});
+			});
+
+			function showBatchResult(msg, rows) {
+				var rowsHtml = rows.map(function (r) {
+					return '<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">' +
+						$("<div>").text(r.email).html() +
+						'</td><td style="padding:4px 8px;border-bottom:1px solid #eee;font-family:monospace">' +
+						$("<div>").text(r.password).html() + '</td></tr>';
+				}).join('');
+				var html =
+					'<div style="padding:14px;min-width:560px;max-width:780px">' +
+						'<p style="margin:0 0 8px"><strong>' + $("<div>").text(msg).html() + '</strong></p>' +
+						'<p style="color:#b71c1c;margin:0 0 8px">⚠ 密码明文仅本次展示，请立即下载备份；离开后无法再次获取。</p>' +
+						'<div style="margin-bottom:8px">' +
+							'<a href="javascript:;" class="button button-small bg-main" id="batch-dl-txt">下载 TXT</a> ' +
+							'<a href="javascript:;" class="button button-small bg-blue" id="batch-dl-csv">下载 CSV</a> ' +
+							'<a href="javascript:;" class="button button-small border-blue" id="batch-copy">复制全部</a>' +
+						'</div>' +
+						'<div style="max-height:400px;overflow:auto;border:1px solid #eee">' +
+						'<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+							'<thead><tr style="background:#f5f5f5">' +
+								'<th style="padding:6px 8px;text-align:left">邮箱</th>' +
+								'<th style="padding:6px 8px;text-align:left">密码</th>' +
+							'</tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
+						'</div></div>';
+				layer.open({
+					type: 1, area: ['auto'], title: '批量生成结果', shadeClose: false,
+					content: html,
+					end: function () { location.reload(); }
+				});
+				function asText(sep) {
+					return rows.map(function (r) { return r.email + sep + r.password; }).join('\n');
+				}
+				function download(filename, content) {
+					var blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+					var a = document.createElement('a');
+					a.href = URL.createObjectURL(blob);
+					a.download = filename;
+					document.body.appendChild(a); a.click();
+					setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 1000);
+				}
+				$(document).off('click.batch').on('click.batch', '#batch-dl-txt', function () {
+					download('accounts_' + Date.now() + '.txt', asText('\t'));
+				}).on('click.batch', '#batch-dl-csv', function () {
+					download('accounts_' + Date.now() + '.csv', 'email,password\n' + asText(','));
+				}).on('click.batch', '#batch-copy', function () {
+					navigator.clipboard.writeText(asText('\t')).then(function () {
+						layer.msg('已复制到剪贴板', { time: 1500 });
+					}).catch(function () { layer.alert('复制失败，请手动选中后 Ctrl+C'); });
+				});
+			}
 		})
-		
+
 	</script>
 </div>
 {include file="$HOME/footer.html"}
