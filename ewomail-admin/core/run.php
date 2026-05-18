@@ -13,7 +13,13 @@
  */
 
 if(!defined("PATH")) exit;
-error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED & ~E_USER_DEPRECATED & ~E_STRICT);
+// 原版框架是 2016 年的代码，PHP 8.x 把许多原 Notice 提升成了 Warning
+// （"Undefined array key" 等）。框架不会因这些 warning 出错，但 PHP-FPM
+// 会把它们走 stderr 流回 nginx，海量噪音可能撑爆响应缓冲、把日志淹掉。
+// 这里只保留 Error/Parse/Fatal 类，看到的就一定是真问题。
+error_reporting(E_ERROR | E_PARSE | E_CORE_ERROR | E_CORE_WARNING | E_COMPILE_ERROR | E_COMPILE_WARNING | E_USER_ERROR | E_RECOVERABLE_ERROR);
+// 双重保险：万一 ini 没设住，运行时再关一次。
+@ini_set('display_errors', 'Off');
 header("Content-type: text/html; charset=utf-8");
 include PATH.'/core/functions.php';
 include PATH.'/lib/smarty-3.1.35/libs/Smarty.class.php';
