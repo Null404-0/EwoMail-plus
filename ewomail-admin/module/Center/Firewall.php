@@ -19,6 +19,15 @@ const KNOWN_PORTS = [
     '110/tcp' => 'POP3 收信（客户端读信，明文 / STARTTLS）',
 ];
 
+/** Per-port description overrides from i_panel_setting.fw_port_descs (JSON). */
+function _fw_custom_descs()
+{
+    $raw = Helper::setting('fw_port_descs', '');
+    if ($raw === '') return [];
+    $j = json_decode($raw, true);
+    return is_array($j) ? $j : [];
+}
+
 Rout::get('index', function () {
     Admin::setMenu(301, '防火墙');
 
@@ -39,17 +48,45 @@ Rout::get('index', function () {
         }
     }
 
+    // 出方向被 REJECT 的端口（由 helper 解析 firewalld direct rules）
+    $out_blocked = [];
+    $ol = Helper::run(['fw-out-list']);
+    if ($ol['ok']) {
+        foreach (preg_split('/\s+/', trim($ol['out'])) as $p) {
+            if ($p !== '') $out_blocked[$p] = true;
+        }
+    }
+
+    $custom = _fw_custom_descs();
+
     // 先按 KNOWN_PORTS 顺序输出（含未开放的），再追加用户自定义端口；
     // 22/tcp/udp 全程过滤掉 —— UI 上完全看不到，避免误操作。
     $open_set = array_flip($ports_open);
     $port_rows = [];
+    $build_row = function ($p, $default_desc, $known) use ($open_set, $out_blocked, $custom) {
+        return [
+            'port'     => $p,
+            'desc'     => isset($custom[$p]) ? $custom[$p] : $default_desc,
+            'in_open'  => isset($open_set[$p]),
+            'out_open' => !isset($out_blocked[$p]),
+            'known'    => $known,
+        ];
+    };
     foreach (KNOWN_PORTS as $p => $desc) {
-        $port_rows[] = ['port' => $p, 'desc' => $desc, 'open' => isset($open_set[$p]), 'known' => true];
+        $port_rows[] = $build_row($p, $desc, true);
     }
     foreach ($ports_open as $p) {
         if ($p === '22/tcp' || $p === '22/udp') continue;
         if (isset(KNOWN_PORTS[$p])) continue;
-        $port_rows[] = ['port' => $p, 'desc' => '自定义端口', 'open' => true, 'known' => false];
+        $port_rows[] = $build_row($p, '自定义端口', false);
+    }
+    // 出方向被堵但入方向未列在 KNOWN/open 里的端口也要展示，否则用户
+    // 看不到这条规则的存在、没法解除。
+    foreach (array_keys($out_blocked) as $p) {
+        if ($p === '22/tcp' || $p === '22/udp') continue;
+        $shown = false;
+        foreach ($port_rows as $r) { if ($r['port'] === $p) { $shown = true; break; } }
+        if (!$shown) $port_rows[] = $build_row($p, '仅出方向已被封禁', false);
     }
 
     $st = Helper::run(['outbound-status']);
@@ -106,4 +143,41 @@ Rout::put('unblock', function () {
 Rout::put('reload', function () {
     $r = Helper::run(['fw-reload']);
     $r['ok'] ? E::success('已重载') : E::error($r['out']);
+});
+
+// ---- 出方向端口开关 ----
+Rout::put('out-add', function () {
+    $val = trim(ipost('port'));
+    if (!Helper::validatePortProto($val)) E::error('格式：1234/tcp 或 1234/udp');
+    $r = Helper::run(['fw-out-add', $val]);
+    $r['ok'] ? E::success('出方向已封禁：' . $val) : E::error('失败：' . $r['out']);
+});
+
+Rout::put('out-del', function () {
+    $val = trim(ipost('port'));
+    if (!Helper::validatePortProto($val)) E::error('格式：1234/tcp 或 1234/udp');
+    $r = Helper::run(['fw-out-del', $val]);
+    $r['ok'] ? E::success('出方向已恢复：' . $val) : E::error('失败：' . $r['out']);
+});
+
+// ---- 编辑端口说明（写入 i_panel_setting.fw_port_descs JSON）----
+Rout::put('desc-save', function () {
+    $port = trim(ipost('port'));
+    $desc = trim(ipost('desc'));
+    if (!Helper::validatePortProto($port)) E::error('端口格式无效');
+    // 防止超大输入或注入控制字符到 JSON；保留多语言文本即可。
+    if (mb_strlen($desc) > 200) E::error('说明太长（最多 200 字符）');
+    if (preg_match('/[\x00-\x1f\x7f]/', $desc)) E::error('说明含非法控制字符');
+
+    $custom = _fw_custom_descs();
+    if ($desc === '') {
+        unset($custom[$port]);  // 清空 = 恢复默认
+    } else {
+        $custom[$port] = $desc;
+    }
+    $json = json_encode($custom, JSON_UNESCAPED_UNICODE);
+    if (!Helper::settingSet('fw_port_descs', $json)) {
+        E::error('保存失败');
+    }
+    E::success('说明已更新');
 });

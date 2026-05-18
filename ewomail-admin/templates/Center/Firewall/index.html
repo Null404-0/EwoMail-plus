@@ -46,34 +46,59 @@
                 </div>
             </form>
             <table class="table table-hover">
-                <thead><tr><th width="120">端口</th><th>说明</th><th width="100">状态</th><th width="100">操作</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th width="100">端口</th>
+                        <th>说明</th>
+                        <th width="110">入方向</th>
+                        <th width="110">出方向</th>
+                        <th width="180">操作</th>
+                    </tr>
+                </thead>
                 <tbody>
                 {foreach from=$port_rows item=row}
                     <tr>
                         <td><strong>{$row.port}</strong></td>
-                        <td style="color:#666">{$row.desc}</td>
+                        <td style="color:#666">
+                            <span class="port-desc-text">{$row.desc|escape}</span>
+                            <a href="javascript:;" class="btn-edit-desc" data-port="{$row.port}" data-desc="{$row.desc|escape}"
+                               style="margin-left:6px;color:#999;font-size:12px">[编辑]</a>
+                        </td>
                         <td>
-                            {if $row.open}
+                            {if $row.in_open}
                                 <span style="color:#43a047;font-weight:bold">● 已开放</span>
                             {else}
                                 <span style="color:#999">○ 未开放</span>
                             {/if}
                         </td>
                         <td>
-                            {if $row.open}
-                                <a href="javascript:;" class="button button-little border-yellow btn-port-del" data-port="{$row.port}">关闭</a>
+                            {if $row.out_open}
+                                <span style="color:#43a047;font-weight:bold">● 允许</span>
                             {else}
-                                <a href="javascript:;" class="button button-little border-green btn-port-add" data-port="{$row.port}">开放</a>
+                                <span style="color:#e53935;font-weight:bold">✕ 已封禁</span>
+                            {/if}
+                        </td>
+                        <td>
+                            {if $row.in_open}
+                                <a href="javascript:;" class="button button-little border-yellow btn-port-del" data-port="{$row.port}">关入向</a>
+                            {else}
+                                <a href="javascript:;" class="button button-little border-green btn-port-add" data-port="{$row.port}">开入向</a>
+                            {/if}
+                            {if $row.out_open}
+                                <a href="javascript:;" class="button button-little border-yellow btn-out-add" data-port="{$row.port}">关出向</a>
+                            {else}
+                                <a href="javascript:;" class="button button-little border-green btn-out-del" data-port="{$row.port}">开出向</a>
                             {/if}
                         </td>
                     </tr>
                 {foreachelse}
-                    <tr><td colspan="4" align="center">尚无端口</td></tr>
+                    <tr><td colspan="5" align="center">尚无端口</td></tr>
                 {/foreach}
                 </tbody>
             </table>
             <p style="color:#888;margin-top:6px;font-size:12px">
                 注：SSH 端口（22/tcp）已被刻意排除在管理列表外，无法通过本面板关闭，以防意外失联。
+                说明编辑后会保存在面板设置中，刷新后仍然有效；留空则恢复默认。
             </p>
         </div>
     </div>
@@ -111,48 +136,105 @@
 var FW_URL = '{U("/Firewall")}';
 {literal}
 $(function () {
-    // 框架通过 _method=put 字段把 POST 路由到 Rout::put；不带就会落到 get
-    // 路由，这些 action 没有 GET 处理器会 404。
-    function ewoPost(action, data, reloadOnOk) {
+    // 全局 $.ajaxSetup 默认 timeout=5000，但 firewall-cmd --reload 在
+    // Debian 12 nftables 后端上经常 >5s（多条直接规则 + zone reload）。
+    // 这里改用本地 $.ajax + timeout 30000，避免请求被前端打断而 helper
+    // 已在后台执行 —— 那种情况下 UI 不刷新，看起来"按钮没反应"。
+    function fwAjax(action, data, onSuccess) {
         if (typeof data === 'string') {
             data += (data ? '&' : '') + '_method=put';
         } else {
             data = data || {};
             data._method = 'put';
         }
-        ajaxPost(FW_URL + '/' + action, data, function (json) {
-            if (json.status && reloadOnOk !== false) location.reload();
+        var ii = layer.load(2);
+        $.ajax({
+            url: FW_URL + '/' + action,
+            type: 'POST',
+            data: data,
+            dataType: 'json',
+            timeout: 30000
+        }).done(function (j) {
+            layer.close(ii);
+            if (!j || typeof j.status === 'undefined') {
+                layer.alert('响应异常'); return;
+            }
+            if (j.status == 0) {
+                layer.alert(j.msg || '失败'); return;
+            }
+            if (onSuccess) {
+                onSuccess(j);
+            } else {
+                layer.msg(j.msg || '成功', { time: 1200 });
+                setTimeout(function () { location.reload(); }, 1200);
+            }
+        }).fail(function (xhr, status) {
+            layer.close(ii);
+            layer.alert(status === 'timeout'
+                ? '操作超时（>30 秒）。后台可能仍在执行，过一会儿刷新本页查看实际状态。'
+                : '请求失败：' + status);
         });
     }
-    $('#port-add-form').on('submit', function (e) { e.preventDefault(); ewoPost('port-add', $(this).serialize()); });
-    $('#block-form').on('submit',    function (e) { e.preventDefault(); ewoPost('block',    $(this).serialize()); });
+
+    // 关键收信端口给一句更强的确认 —— 关掉 25 = 收不到外网邮件
+    var CRITICAL_IN  = { '25/tcp':  '外网投递（彻底收不到任何来自其他邮件服务器的邮件）',
+                         '80/tcp':  'acme.sh HTTP-01 续签 SSL（证书会过期后失败）',
+                         '443/tcp': '所有 HTTPS 访问（网页 / 管理后台 / Webmail 全断）' };
+    var CRITICAL_OUT = { '80/tcp':  'acme.sh 出向 HTTP（无法连 Let\'s Encrypt 验证）',
+                         '443/tcp': 'apt / 系统更新等所有 HTTPS 出向连接' };
+
+    $('#port-add-form').on('submit', function (e) {
+        e.preventDefault(); fwAjax('port-add', $(this).serialize());
+    });
+    $('#block-form').on('submit', function (e) {
+        e.preventDefault(); fwAjax('block', $(this).serialize());
+    });
+
     $(document).on('click', '.btn-port-add', function () {
-        ewoPost('port-add', { port: $(this).data('port') });
+        fwAjax('port-add', { port: $(this).data('port') });
     });
     $(document).on('click', '.btn-port-del', function () {
         var port = $(this).data('port');
-        // 关键收信端口给一句更强的确认 —— 关掉 25 = 收不到外网邮件
-        var critical = { '25/tcp': '外网投递（彻底收不到任何来自其他邮件服务器的邮件）',
-                         '80/tcp': 'acme.sh HTTP-01 续签 SSL（证书会过期后失败）',
-                         '443/tcp': '所有 HTTPS 访问（网页 / 管理后台 / Webmail 全断）' };
-        if (critical[port]) {
-            if (!confirm('警告：关闭 ' + port + ' 会影响 ' + critical[port] + '。\n\n确定要关闭吗？')) return;
+        if (CRITICAL_IN[port]) {
+            if (!confirm('警告：关闭 ' + port + ' 入向会影响 ' + CRITICAL_IN[port] + '。\n\n确定要关闭吗？')) return;
         } else {
-            if (!confirm('关闭端口 ' + port + ' ？')) return;
+            if (!confirm('关闭端口 ' + port + ' 入向？')) return;
         }
-        ewoPost('port-del', { port: port });
+        fwAjax('port-del', { port: port });
     });
+
+    $(document).on('click', '.btn-out-add', function () {
+        var port = $(this).data('port');
+        if (CRITICAL_OUT[port]) {
+            if (!confirm('警告：封禁 ' + port + ' 出向会影响 ' + CRITICAL_OUT[port] + '。\n\n确定要封禁吗？')) return;
+        } else {
+            if (!confirm('封禁 ' + port + ' 出向连接？')) return;
+        }
+        fwAjax('out-add', { port: port });
+    });
+    $(document).on('click', '.btn-out-del', function () {
+        fwAjax('out-del', { port: $(this).data('port') });
+    });
+
     $(document).on('click', '.btn-unblock', function () {
-        ewoPost('unblock', { ip: $(this).data('ip') });
+        fwAjax('unblock', { ip: $(this).data('ip') });
+    });
+
+    $(document).on('click', '.btn-edit-desc', function () {
+        var port = $(this).data('port');
+        var curr = $(this).data('desc') || '';
+        var s = prompt('编辑 ' + port + ' 的说明（留空恢复默认；最多 200 字符）:', curr);
+        if (s === null) return; // 用户按 Cancel
+        fwAjax('desc-save', { port: port, desc: s });
     });
 
     $('#btn-outbound-disable').on('click', function () {
         if (!confirm('确认关闭外发邮件？\n\n• 用户在 webmail 中按「发送」将立刻失败\n• 外部 SMTP 客户端无法用 465/587 提交\n• 仅入向收信保持正常\n\n继续？')) return;
-        ewoPost('outbound-disable', {});
+        fwAjax('outbound-disable', {});
     });
     $('#btn-outbound-enable').on('click', function () {
         if (!confirm('确认恢复外发邮件？')) return;
-        ewoPost('outbound-enable', {});
+        fwAjax('outbound-enable', {});
     });
 });
 {/literal}

@@ -66,6 +66,16 @@ class Db
 	}
 
     /**
+     * 安全的字符串引用——返回带引号的字面量，调用方直接拼接进 SQL。
+     * 用于面板设置等少数确实需要原生 SQL + 用户数据混合的场合；普通业务
+     * 代码应优先使用 insert()/update() 或参数化查询。
+     */
+    public function quote($value)
+    {
+        return $this->pdo->quote($value);
+    }
+
+    /**
      * INSERT\UPDATE\DELETE
      * @param $sql
      * @return mixed

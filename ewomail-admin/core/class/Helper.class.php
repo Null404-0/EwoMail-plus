@@ -66,15 +66,38 @@ class Helper
     /** Reads a panel setting from i_panel_setting (created by installer). */
     public static function setting($name, $default = '')
     {
-        // Whitelist: panel keys are fixed, so we never accept arbitrary input.
-        static $allowed = [
-            'admin_path', 'db_path', 'db_admin_enable',
-            'mail_host', 'public_ip', 'le_email',
-        ];
-        if (!in_array($name, $allowed, true)) {
+        if (!in_array($name, self::settingAllowed(), true)) {
             return $default;
         }
         $row = App::$db->getOne("SELECT value FROM i_panel_setting WHERE name='" . $name . "'");
         return isset($row['value']) ? $row['value'] : $default;
+    }
+
+    /**
+     * Writes a panel setting. Same whitelist as read; values are escaped via
+     * PDO::quote. Returns true/false.
+     */
+    public static function settingSet($name, $value)
+    {
+        if (!in_array($name, self::settingAllowed(), true)) {
+            return false;
+        }
+        if (strlen($value) > 65536) {
+            return false;
+        }
+        // $name 已经被上面的白名单约束，可以直接拼；$value 走 PDO::quote 转义。
+        $sql = "REPLACE INTO i_panel_setting (name, value) VALUES ('" . $name . "', " . App::$db->quote($value) . ")";
+        return App::$db->execute($sql) !== false;
+    }
+
+    /** Single source of truth for which setting keys are permitted. */
+    private static function settingAllowed()
+    {
+        return [
+            'admin_path', 'db_path', 'db_admin_enable',
+            'mail_host', 'public_ip', 'le_email',
+            'outbound_disabled',  // set by helper, may be read by panel
+            'fw_port_descs',      // JSON: per-port custom description overrides
+        ];
     }
 }

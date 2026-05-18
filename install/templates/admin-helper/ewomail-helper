@@ -20,9 +20,12 @@ usage() {
 ewomail-helper <command> [args...]
 
 Firewall:
-  fw-list                                  show open ports
-  fw-add    <port>/<tcp|udp>               open a port permanently
-  fw-del    <port>/<tcp|udp>               close a port permanently
+  fw-list                                  show open ports (inbound, zone)
+  fw-add    <port>/<tcp|udp>               open inbound port permanently
+  fw-del    <port>/<tcp|udp>               close inbound port permanently
+  fw-out-add  <port>/<tcp|udp>             block outbound (OUTPUT REJECT)
+  fw-out-del  <port>/<tcp|udp>             allow outbound
+  fw-out-list                              list outbound-blocked ports
   fw-block  <ip>                           rich-rule reject from IP
   fw-unblock <ip>
   fw-allowlist-add <ip>
@@ -141,28 +144,66 @@ case "${cmd}" in
     # 又阻止外部用户用 465/587 通过本机做中继。
     # 出向 25 通常 SMTP 客户端用，入向 465/587 是 Submission 接口。
     outbound-disable)
-        firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 100 -p tcp --dport 25 -j REJECT 2>/dev/null || true
-        firewall-cmd --permanent --direct --add-rule ipv6 filter OUTPUT 100 -p tcp --dport 25 -j REJECT 2>/dev/null || true
+        # 委托给底层 fw-out-add 来加 OUTPUT REJECT 规则，这样和单端口出方向
+        # 切换共用同一套机制。
+        "$0" fw-out-add 25/tcp >/dev/null
         firewall-cmd --permanent --zone="${ZONE}" --remove-port=465/tcp 2>/dev/null || true
         firewall-cmd --permanent --zone="${ZONE}" --remove-port=587/tcp 2>/dev/null || true
         firewall-cmd --reload
         mysql -uroot ewomail -e "REPLACE INTO i_panel_setting VALUES ('outbound_disabled','yes')"
         ;;
     outbound-enable)
-        firewall-cmd --permanent --direct --remove-rule ipv4 filter OUTPUT 100 -p tcp --dport 25 -j REJECT 2>/dev/null || true
-        firewall-cmd --permanent --direct --remove-rule ipv6 filter OUTPUT 100 -p tcp --dport 25 -j REJECT 2>/dev/null || true
+        "$0" fw-out-del 25/tcp >/dev/null
         firewall-cmd --permanent --zone="${ZONE}" --add-port=465/tcp 2>/dev/null || true
         firewall-cmd --permanent --zone="${ZONE}" --add-port=587/tcp 2>/dev/null || true
         firewall-cmd --reload
         mysql -uroot ewomail -e "REPLACE INTO i_panel_setting VALUES ('outbound_disabled','no')"
         ;;
     outbound-status)
-        if firewall-cmd --permanent --direct --query-rule ipv4 filter OUTPUT 100 -p tcp --dport 25 -j REJECT 2>/dev/null; then
-            echo yes
-        else
-            echo no
-        fi
+        # 之前用 firewall-cmd --direct --query-rule 来判断，但 Debian 12+ 的
+        # firewalld 默认 nftables 后端，--direct 是 compat 层，query-rule 的
+        # exit code 偶尔不可靠。改用 DB 标志位作为权威：每次 disable/enable
+        # 都会同步写 DB，状态查询直接读 DB 即可，不再触发 firewall-cmd。
+        state=$(mysql -uroot -N -B ewomail -e \
+            "SELECT value FROM i_panel_setting WHERE name='outbound_disabled'" 2>/dev/null)
+        [[ "${state}" == "yes" ]] && echo yes || echo no
         ;;
+
+    # ---- 单端口出方向（OUTPUT REJECT）----
+    # 给每个端口提供和入方向类似的开关。22/tcp/udp 仍然拒绝操作。
+    fw-out-add)
+        [[ $# -eq 1 ]] && valid_port_proto "$1" || usage
+        if [[ "$1" == "22/tcp" || "$1" == "22/udp" ]]; then
+            echo "refused: 22 是 SSH 端口" >&2; exit 2
+        fi
+        p_port="${1%/*}"; p_proto="${1#*/}"
+        firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 100 \
+            -p "${p_proto}" --dport "${p_port}" -j REJECT 2>/dev/null || true
+        firewall-cmd --permanent --direct --add-rule ipv6 filter OUTPUT 100 \
+            -p "${p_proto}" --dport "${p_port}" -j REJECT 2>/dev/null || true
+        firewall-cmd --reload
+        ;;
+    fw-out-del)
+        [[ $# -eq 1 ]] && valid_port_proto "$1" || usage
+        p_port="${1%/*}"; p_proto="${1#*/}"
+        firewall-cmd --permanent --direct --remove-rule ipv4 filter OUTPUT 100 \
+            -p "${p_proto}" --dport "${p_port}" -j REJECT 2>/dev/null || true
+        firewall-cmd --permanent --direct --remove-rule ipv6 filter OUTPUT 100 \
+            -p "${p_proto}" --dport "${p_port}" -j REJECT 2>/dev/null || true
+        firewall-cmd --reload
+        ;;
+    fw-out-list)
+        # 输出当前出方向被 REJECT 的端口，一行一个 port/proto。
+        # 解析 `firewall-cmd --get-rules ipv4 filter OUTPUT` 的输出，形如：
+        #   100 -p tcp --dport 25 -j REJECT
+        firewall-cmd --permanent --direct --get-rules ipv4 filter OUTPUT 2>/dev/null | \
+        while IFS= read -r line; do
+            proto=$(echo "${line}" | sed -nE 's/.*-p (tcp|udp).*/\1/p')
+            port=$(echo "${line}"  | sed -nE 's/.*--dport ([0-9]+).*/\1/p')
+            [[ -n "${port}" && -n "${proto}" ]] && echo "${port}/${proto}"
+        done | sort -u
+        ;;
+
 
     # ---- Nginx ----
     nginx-list)
