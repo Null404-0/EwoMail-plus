@@ -31,12 +31,40 @@ Rout::get('index', function () {
 
     $test = Helper::run(['nginx-test']);
 
+    // 当前运行的 nginx 版本（裸数字）+ 是否来自 nginx.org（用于在 UI 标注）
+    $ver = Helper::run(['nginx-version']);
+    $nginx_version  = $ver['ok'] ? trim($ver['out']) : '未知';
+    // 简单判断：1.22.x 是 Debian 12 自带、1.30+ 一般来自 nginx.org stable
+    $is_debian_stock = (bool)preg_match('/^1\.(22|18|14)\./', $nginx_version);
+
     Tp::assign([
-        'sites'    => $sites,
-        'test_out' => $test['out'],
-        'test_ok'  => $test['ok'],
+        'sites'           => $sites,
+        'test_out'        => $test['out'],
+        'test_ok'         => $test['ok'],
+        'nginx_version'   => $nginx_version,
+        'is_debian_stock' => $is_debian_stock,
     ]);
     Tp::display();
+});
+
+Rout::put('upgrade', function () {
+    // 升级动作较重（apt-get update + install + reload），可能耗时 1-3 分钟。
+    // 前端 ajax timeout 必须给够，否则会断给用户假超时（参考 Cert 模块的
+    // pLong helper）。
+    $r = Helper::run(['nginx-upgrade']);
+    // 把 helper 输出按行拆开，前端展示 step= 和 version= 等关键字段；
+    // 但完整输出（含 apt 进度）也透传过去，方便排查。
+    $info = ['output' => $r['out']];
+    foreach (preg_split('/\R/', $r['out']) as $line) {
+        if (preg_match('/^(step|backup|version|note)=(.+)$/', $line, $m)) {
+            $info[$m[1]] = $m[2];
+        }
+    }
+    if (!$r['ok']) {
+        E::error('升级失败（rc=' . $r['rc'] . '）：' . substr($r['out'], -800), '', $info);
+    }
+    AdminLog::save(['ac' => 'edit', 'c' => 'Nginx 升级到 ' . ($info['version'] ?? '?')]);
+    E::success('升级完成，当前版本：' . ($info['version'] ?? '?'), '', $info);
 });
 
 Rout::get('edit', function () {

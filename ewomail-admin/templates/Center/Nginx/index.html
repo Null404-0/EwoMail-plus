@@ -1,5 +1,35 @@
 {include file="$HOME/header.html"}
 <div class="admin">
+
+    <div class="panel admin-panel" style="margin-bottom:14px">
+        <div class="panel-head">
+            <strong>Nginx 版本</strong>
+            <span style="float:right">
+                <span style="margin-right:14px;color:#666">当前: <strong style="color:#222">{$nginx_version}</strong>
+                    {if $is_debian_stock}<em style="color:#e53935;margin-left:6px">⚠ Debian 自带版本，存在 CVE-2026-42945</em>{/if}
+                </span>
+                <a href="javascript:;" id="btn-upgrade" class="button button-small bg-blue">升级到 nginx.org 稳定版</a>
+            </span>
+        </div>
+        <div class="padding">
+            <p style="color:#666;margin:0">
+                Debian 12 仓库的 nginx 是 1.22.1，不带 CVE-2026-42945 的修复（修复在 1.30.1）。
+                这里的"升级"会切到 <code>nginx.org</code> 官方 stable 源（一般是 1.30.x），过程：
+            </p>
+            <ul style="color:#666;margin:6px 0 0 20px;line-height:1.7">
+                <li>先把 <code>/etc/nginx</code> 完整备份到 <code>/etc/nginx.bak-&lt;时间戳&gt;</code></li>
+                <li>添加 nginx.org 源并 pin（保证以后 apt 都从这里取）</li>
+                <li><code>apt install nginx</code> 时用 <code>--force-confold</code> 保留你现有的
+                    <code>nginx.conf</code>（含 <code>user www-data;</code> 和 <code>include sites-enabled/*</code>）</li>
+                <li>禁用 nginx.org 包带过来的 <code>conf.d/default.conf</code>（占 80 会和我们的 vhost 撞）</li>
+                <li><code>nginx -t</code> 通过才 reload；不通过自动 <code>mv</code> 备份回来 100% 还原</li>
+            </ul>
+            <p style="color:#888;font-size:12px;margin-top:8px">
+                典型耗时 30-180 秒（取决于网络）；reload 时连接可能短暂 1-2 秒不可用，<strong>不会断 SSH</strong>。
+            </p>
+        </div>
+    </div>
+
     <div class="panel admin-panel">
         <div class="panel-head">
             <strong>Nginx 站点（/etc/nginx/sites-available）</strong>
@@ -68,6 +98,59 @@ $(function () {
     $('#btn-reload').on('click', function () { p('reload', {}, false); });
     $(document).on('click', '.btn-toggle', function () {
         p($(this).data('act'), { name: $(this).data('name') });
+    });
+
+    // 升级走单独的 ajax —— apt-get update + install 通常 1-3 分钟，给 5 分钟超时
+    $('#btn-upgrade').on('click', function () {
+        if (!confirm(
+            '确认把 Nginx 升级到 nginx.org stable 版本？\n\n' +
+            '• 会先把 /etc/nginx 完整备份\n' +
+            '• 失败会自动 mv 备份回来还原配置\n' +
+            '• 期间 HTTPS 连接会短暂卡顿 1-2 秒（reload 时间）\n' +
+            '• SSH 不受影响\n\n' +
+            '过程典型 1-3 分钟，请耐心等待。继续？'
+        )) return;
+
+        var ii = layer.load(2);
+        // tip 一行提示用户"在跑了别关页面"
+        var tipIdx = layer.msg('正在升级 Nginx，过程 1-3 分钟，请勿关闭本页…', { time: 0, icon: 16 });
+
+        $.ajax({
+            url: NGINX_URL + '/upgrade',
+            type: 'POST',
+            data: { _method: 'put' },
+            dataType: 'json',
+            timeout: 300000   // 5 分钟
+        }).done(function (j) {
+            layer.close(ii); layer.close(tipIdx);
+            if (!j || typeof j.status === 'undefined') { layer.alert('响应异常'); return; }
+            var info = j.data || {};
+            if (j.status == 0) {
+                // 失败：把 helper 输出尾巴附上，方便定位
+                var detail = info.output ? '\n\n--- helper 输出（最后部分）---\n' + info.output.slice(-1500) : '';
+                layer.alert((j.msg || '失败') + detail);
+                return;
+            }
+            var msg = '升级完成！\n\n' +
+                '新版本: ' + (info.version || '?') + '\n' +
+                (info.backup ? '备份位置: ' + info.backup + '\n' : '') +
+                (info.note   ? '附加说明: ' + info.note   + '\n' : '');
+            layer.alert(msg, { title: '升级完成' }, function (idx) {
+                layer.close(idx);
+                location.reload();
+            });
+        }).fail(function (xhr, status) {
+            layer.close(ii); layer.close(tipIdx);
+            if (status === 'timeout') {
+                layer.alert(
+                    '前端等待超过 5 分钟仍未收到结果。\n' +
+                    '后台 apt 可能还在跑，过 1-2 分钟刷新本页看下版本号；\n' +
+                    '若版本未变，登 SSH 看 /var/log/apt/term.log 排查。'
+                );
+            } else {
+                layer.alert('请求失败：' + status);
+            }
+        });
     });
 });
 {/literal}
