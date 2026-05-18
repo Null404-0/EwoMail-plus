@@ -1,52 +1,96 @@
 # Installs system packages from Debian repositories only.
 
+_nginx_keyring_valid() {
+    # _nginx_keyring_valid <keyring-file>
+    # Returns 0 when the keyring can be read by gpg and contains at least one
+    # currently documented nginx.org signing fingerprint.  This also catches a
+    # common interrupted-install state where gpg created a zero-byte keyring and
+    # the next run would otherwise skip re-downloading it just because -f is true.
+    local keyring="$1" out fp
+    [[ -s "${keyring}" ]] || return 1
+
+    out=$(gpg --dry-run --quiet --no-keyring --import --import-options import-show "${keyring}" 2>/dev/null) || return 1
+    for fp in \
+        8540A6F18833A80E9C1653A42FD21310B49F6B46 \
+        573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62 \
+        9E9BE90EACBCDE69FE9B204CBCDCD8A38D88A2B3
+    do
+        if grep -q "${fp}" <<<"${out}"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+install_nginx_repo_prerequisites() {
+    # Official nginx.org Debian repo setup needs curl + gpg before the nginx
+    # repository is added.  Do this small Debian-only bootstrap first; otherwise
+    # minimal VPS images that have curl but not gpg fail at [1/14] while trying
+    # to dearmor nginx_signing.key.
+    ui_info "安装 nginx.org 源所需的基础工具"
+    run_stream apt-get update
+    run_stream apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg lsb-release debian-archive-keyring
+}
+
 setup_nginx_org_repo() {
     # 把 nginx.org stable 源加进 apt，并 pin 到 priority 900，让 `apt install
     # nginx` 永远走 nginx.org（一般是 1.30.x），不走 Debian 自带的 1.22.1。
     # CVE-2026-42945 的修复在 1.30.1 / 1.31.0 起，所以 1.22 是硬要避免的。
     #
-    # 失败处理：之前是静默回退到 Debian 自带，结果用户装完拿到 1.22 自己都
-    # 不知道。现在硬失败 —— precheck_nginx_org 已经在 confirm 之前验过可达，
-    # 这里再失败说明是 curl/gpg 工具坏了或 keyrings 目录有问题，需要排查。
+    # 注意：调用本函数前必须先安装 curl/gpg/ca-certificates。Debian 极简镜像
+    # 常常只有 apt/git，没有 gpg；如果边加源边依赖尚未安装的 gpg，会出现
+    # “nginx.org 密钥获取失败”的假网络错误。
     if [[ "${EWO_ALLOW_NGINX_OLD:-0}" == "1" ]]; then
         ui_warn "EWO_ALLOW_NGINX_OLD=1：跳过 nginx.org 源配置，将使用 Debian 自带 nginx 1.22"
         return 0
     fi
 
-    install -d -m 0755 /etc/apt/keyrings
-    if [[ ! -f /etc/apt/keyrings/nginx.gpg ]]; then
-        local attempts=3 i ok=0 tmp_key
+    local keyring="/usr/share/keyrings/nginx-archive-keyring.gpg"
+    install -d -m 0755 /usr/share/keyrings
+
+    if ! _nginx_keyring_valid "${keyring}"; then
+        local attempts=3 i ok=0 tmp_key tmp_ring fp_out
         tmp_key=$(mktemp)
+        tmp_ring=$(mktemp)
+        rm -f "${tmp_ring}"
         for i in 1 2 3; do
             if curl -fsSL --connect-timeout 10 --max-time 30 \
                     -o "${tmp_key}" \
                     https://nginx.org/keys/nginx_signing.key 2>>"${LOG_FILE}"; then
-                # 校验下载下来的内容确实是 ASCII-armored PGP key
+                # 校验下载下来的内容确实是 ASCII-armored PGP key，再写入临时
+                # keyring，最后用 nginx.org 官方文档列出的 fingerprint 验证。
                 if [[ -s "${tmp_key}" ]] && head -1 "${tmp_key}" | grep -q 'BEGIN PGP PUBLIC KEY'; then
-                    if gpg --dearmor -o /etc/apt/keyrings/nginx.gpg < "${tmp_key}" 2>>"${LOG_FILE}"; then
+                    if gpg --dearmor --yes -o "${tmp_ring}" "${tmp_key}" 2>>"${LOG_FILE}" \
+                       && _nginx_keyring_valid "${tmp_ring}"; then
+                        fp_out=$(gpg --dry-run --quiet --no-keyring --import --import-options import-show "${tmp_ring}" 2>/dev/null || true)
+                        install -m 0644 "${tmp_ring}" "${keyring}"
+                        log "nginx.org key fingerprints verified: $(grep -E '^[[:space:]]*[A-F0-9]{40}$' <<<"${fp_out}" | tr -d ' ' | tr '\n' ' ')"
                         ok=1; break
                     fi
                 fi
             fi
             [[ $i -lt $attempts ]] && {
-                ui_dim "nginx.org 密钥获取失败（${i}/${attempts}），${i}s 后重试……"
+                ui_dim "nginx.org 密钥获取失败（${i}/${attempts}），$((i * 2))s 后重试……"
                 sleep $((i * 2))
             }
         done
-        rm -f "${tmp_key}"
+        rm -f "${tmp_key}" "${tmp_ring}"
         if [[ $ok -ne 1 ]]; then
             ui_err "$(printf '获取 nginx.org 签名密钥失败（重试 %s 次都没成功）。\n详细日志见 %s。\n如需用 Debian 自带 1.22 装：EWO_ALLOW_NGINX_OLD=1 ./install.sh\n' "$attempts" "${LOG_FILE}")"
             return 1
         fi
-        chmod 0644 /etc/apt/keyrings/nginx.gpg
+    else
+        ui_ok "nginx.org 签名密钥已存在且 fingerprint 有效"
     fi
 
     cat > /etc/apt/sources.list.d/nginx-stable.list <<EOF
-deb [signed-by=/etc/apt/keyrings/nginx.gpg] https://nginx.org/packages/debian ${EWO_OS_CODENAME} nginx
+deb [signed-by=${keyring}] https://nginx.org/packages/debian ${EWO_OS_CODENAME} nginx
 EOF
     cat > /etc/apt/preferences.d/nginx-stable <<'EOF'
 Package: nginx
 Pin: origin nginx.org
+Pin: release o=nginx
 Pin-Priority: 900
 EOF
     ui_ok "已配置 nginx.org stable 源（${EWO_OS_CODENAME}）"
@@ -88,6 +132,9 @@ install_apt_packages() {
 
     # Pull nginx from nginx.org's stable channel — Debian 12 ships 1.22.1
     # which is below the CVE-2026-42945 fix boundary (1.30.1 / 1.31.0).
+    if [[ "${EWO_ALLOW_NGINX_OLD:-0}" != "1" ]]; then
+        install_nginx_repo_prerequisites
+    fi
     if ! setup_nginx_org_repo; then
         ui_err "nginx.org 源配置失败，无法继续。"
         return 1

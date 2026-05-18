@@ -214,6 +214,15 @@ precheck_nginx_org() {
     # 极少数情况下 Debian 13 (trixie) 刚发布、nginx.org 还没跟上，这时
     # 装到 apt-get update 才报 404 太晚。这里提前查 Release 文件。
     local release_url="https://nginx.org/packages/debian/dists/${EWO_OS_CODENAME}/Release"
+
+    # precheck 发生在安装软件包之前；Debian 极简镜像可能还没有 curl。
+    # 这种情况下不要把“缺少诊断工具”误报成 nginx.org 不可达，真正的
+    # curl/gpg 会在 [1/14] 的 bootstrap 小步骤中先装好。
+    if ! command -v curl >/dev/null 2>&1; then
+        ui_warn "当前系统尚未安装 curl，已跳过 nginx.org 预检；安装阶段会先安装 curl/gpg 后再配置源。"
+        return 0
+    fi
+
     local attempts=3 i ok=0
     for i in 1 2 3; do
         if curl -fsS --connect-timeout 10 --max-time 30 -o /dev/null "${key_url}" 2>>"${LOG_FILE}"; then
