@@ -16,11 +16,14 @@ class SmartyCompilerException extends SmartyException
     }
 
     /**
-     * The line number of the template error
+     * The line number of the template error.
      *
-     * @type int|null
+     * PHP 8.1+ enforces LSP on Exception::$line (typed `int` in the engine), so
+     * Smarty 3.1.35's original `public $line = null;` triggers a Fatal at class
+     * load time. We must redeclare with the same `int` type — `?int` is also
+     * rejected because nullable widens the parent type.
      */
-    public ?int $line = null;
+    public int $line = 0;
 
     /**
      * The template source snippet relating to the error
