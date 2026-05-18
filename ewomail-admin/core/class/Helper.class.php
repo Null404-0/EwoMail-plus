@@ -46,6 +46,38 @@ class Helper
         return ['ok' => $rc === 0, 'out' => $out, 'rc' => $rc];
     }
 
+
+    /**
+     * Stream helper stdout directly to the browser. Intended for downloads.
+     * Stderr is captured and returned so binary stdout is never polluted.
+     */
+    public static function stream(array $args, &$err = '')
+    {
+        $cmd = 'sudo -n ' . escapeshellarg(self::HELPER);
+        foreach ($args as $a) {
+            $cmd .= ' ' . escapeshellarg($a);
+        }
+
+        $proc = proc_open($cmd, [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ], $pipes);
+        if (!is_resource($proc)) {
+            $err = 'proc_open failed';
+            return -1;
+        }
+        fclose($pipes[0]);
+        while (!feof($pipes[1])) {
+            echo fread($pipes[1], 8192);
+            if (function_exists('flush')) flush();
+        }
+        fclose($pipes[1]);
+        $err = stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
+        return proc_close($proc);
+    }
+
     public static function validatePortProto($s)
     {
         return (bool)preg_match('#^[0-9]{1,5}/(tcp|udp)$#', $s);

@@ -7,9 +7,21 @@
                 <p><strong>文件：</strong>{$live.path}</p>
                 <p><strong>最近更新：</strong>{$live.mtime}</p>
                 <pre style="background:#f5f5f5;padding:8px">{$live.info|escape}</pre>
+                <p>
+                    <a href="{U('/Cert/backup')}" class="button bg-blue">备份SSL证书</a>
+                    <button type="button" class="button border-green btn-restore-pick">恢复证书</button>
+                    <em style="color:#888">备份会下载当前证书和私钥；恢复后自动部署并重载服务。</em>
+                </p>
             {else}
                 <em>尚未部署证书。</em>
+                <p style="margin-top:10px">
+                    <button type="button" class="button border-green btn-restore-pick">恢复证书</button>
+                    <em style="color:#888">选择之前备份的 .tar.gz 文件，恢复后自动部署。</em>
+                </p>
             {/if}
+            <form id="restore-form" enctype="multipart/form-data" style="display:none">
+                <input type="file" name="backup" id="restore-file" accept=".tar.gz,.tgz,application/gzip,application/x-gzip">
+            </form>
         </div>
     </div>
 
@@ -79,6 +91,39 @@ $(function () {
     $('#issue-form').on('submit', function (e) { e.preventDefault(); pLong('issue', $(this).serialize(), function () {}); });
     $(document).on('click', '.btn-renew',   function () { pLong('renew',   { domain: $(this).data('d') }, function () {}); });
     $(document).on('click', '.btn-install', function () { pLong('install', { domain: $(this).data('d') }); });
+
+    $(document).on('click', '.btn-restore-pick', function () {
+        $('#restore-file').val('').click();
+    });
+    $('#restore-file').on('change', function () {
+        if (!this.files || !this.files.length) return;
+        var file = this.files[0];
+        layer.confirm('确定恢复备份文件 “' + file.name + '” 吗？当前证书会先自动留一份服务器备份。', function () {
+            var fd = new FormData($('#restore-form')[0]);
+            fd.append('_method', 'put');
+            var ii = layer.load(2);
+            $.ajax({
+                url: CERT_URL + '/restore',
+                type: 'POST',
+                data: fd,
+                processData: false,
+                contentType: false,
+                dataType: 'json',
+                timeout: 180000
+            }).done(function (j) {
+                layer.close(ii);
+                if (!j || typeof j.status === 'undefined') { layer.alert('响应异常'); return; }
+                if (j.status == 0) { layer.alert(j.msg || '恢复失败'); return; }
+                layer.msg(j.msg || '恢复成功', { time: 2500 });
+                setTimeout(function () { location.reload(); }, 1500);
+            }).fail(function (xhr, status) {
+                layer.close(ii);
+                layer.alert(status === 'timeout' ?
+                    '恢复超时（>3 分钟仍未完成）。请稍后刷新本页查看结果。' :
+                    '请求失败：' + status);
+            });
+        });
+    });
 });
 {/literal}
 </script>
