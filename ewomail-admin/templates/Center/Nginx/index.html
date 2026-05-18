@@ -41,6 +41,8 @@
 </div>
 
 <script>
+var NGINX_URL = '{U("/Nginx")}';
+{literal}
 $(function () {
     function p(action, data, reload) {
         data = data || {};
@@ -48,7 +50,7 @@ $(function () {
         else data._method = 'put';
         var ii = layer.load(2);
         $.ajax({
-            url: '{U("/Nginx")}/' + action,
+            url: NGINX_URL + '/' + action,
             type: 'POST', data: data, dataType: 'json',
             timeout: 60000
         }).done(function (j) {
@@ -68,5 +70,6 @@ $(function () {
         p($(this).data('act'), { name: $(this).data('name') });
     });
 });
+{/literal}
 </script>
 {include file="$HOME/footer.html"}

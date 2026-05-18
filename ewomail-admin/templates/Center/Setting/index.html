@@ -38,12 +38,14 @@
 </div>
 
 <script>
+var SETTING_URL = '{U("/Setting")}';
+{literal}
 $(function () {
     function p(action, data, cb) {
         data = data || {};
         if (typeof data === 'string') data += (data ? '&' : '') + '_method=put';
         else data._method = 'put';
-        ajaxPost('{U("/Setting")}/' + action, data, cb);
+        ajaxPost(SETTING_URL + '/' + action, data, cb);
     }
 
     $('#rotate-admin').on('click', function () {
@@ -63,5 +65,6 @@ $(function () {
     });
     $('#pwd-form').on('submit', function (e) { e.preventDefault(); p('change-password', $(this).serialize()); });
 });
+{/literal}
 </script>
 {include file="$HOME/footer.html"}

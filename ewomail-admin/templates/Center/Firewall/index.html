@@ -81,6 +81,8 @@
 </div>
 
 <script>
+var FW_URL = '{U("/Firewall")}';
+{literal}
 $(function () {
     // 框架通过 _method=put 字段把 POST 路由到 Rout::put；不带就会落到 get
     // 路由，这些 action 没有 GET 处理器会 404。
@@ -91,7 +93,7 @@ $(function () {
             data = data || {};
             data._method = 'put';
         }
-        ajaxPost('{U("/Firewall")}/' + action, data, function (json) {
+        ajaxPost(FW_URL + '/' + action, data, function (json) {
             if (json.status && reloadOnOk !== false) location.reload();
         });
     }
@@ -105,7 +107,6 @@ $(function () {
         ewoPost('unblock', { ip: $(this).data('ip') });
     });
 
-    // 外发邮件开关——动作较重，给一次显式确认
     $('#btn-outbound-disable').on('click', function () {
         if (!confirm('确认关闭外发邮件？\n\n• 用户在 webmail 中按「发送」将立刻失败\n• 外部 SMTP 客户端无法用 465/587 提交\n• 仅入向收信保持正常\n\n继续？')) return;
         ewoPost('outbound-disable', {});
@@ -115,5 +116,6 @@ $(function () {
         ewoPost('outbound-enable', {});
     });
 });
+{/literal}
 </script>
 {include file="$HOME/footer.html"}
