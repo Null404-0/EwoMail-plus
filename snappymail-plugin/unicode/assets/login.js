@@ -437,103 +437,71 @@
         });
     }
 
-    function changePasswordRequest(oldp, newp) {
-        // SnappyMail 不同版本 plugin JSON 端点的 URL 形态 + action 名前缀
-        // 都可能略不同。这里穷举几种组合，任一返回真实 Result 即用。
-        //
-        // URL pattern 候选：
-        //   /?/<Action>/0/<rand>/       —— 主流模式（同 AppData 路由格式）
-        //   /?/Json/<Action>/0/<rand>/  —— 加 Json 前缀的备选
-        // action 名候选：
-        //   UnicodeChangePassword       —— addJsonHook 注册的原名
-        //   DoUnicodeChangePassword     —— SnappyMail 内部某些版本会自动加 "Do" 前缀
-        //   PluginUnicodeChangePassword —— 极少数版本的 plugin 命名空间前缀
-        // 另外把 Action 名同时塞到 POST body 里冗余传一份 —— 部分 dispatcher
-        // 从 body 而不是 URL 读 action 名。
-
-        var rand = Math.random().toString(36).slice(2);
-        var actionNames = [
-            'UnicodeChangePassword',
-            'DoUnicodeChangePassword',
-            'PluginUnicodeChangePassword'
-        ];
-        var urlTemplates = [
-            '/?/{A}/0/' + rand + '/',
-            '/?/Json/{A}/0/' + rand + '/',
-            '/?/Json/&q[]=/0/0/{A}/'
-        ];
-        var paths = [];
-        actionNames.forEach(function (a) {
-            urlTemplates.forEach(function (t) {
-                paths.push({ url: t.replace('{A}', a), action: a });
-            });
-        });
-
-        var token = '';
+    // 从 SnappyMail 已渲染的 DOM / window 状态里抓当前登入的 email。
+    // SnappyMail 不同版本暴露方式不同，挨个试。任一拿到 @ 字样就用。
+    function getCurrentEmail() {
         try {
-            if (window.rl && window.rl.settings && typeof window.rl.settings.app === 'function') {
-                token = window.rl.settings.app('token') || '';
+            var rl = window.rl;
+            if (rl) {
+                // 模式 1：rl.settings.get('Email')
+                if (rl.settings && typeof rl.settings.get === 'function') {
+                    var v = rl.settings.get('Email');
+                    if (typeof v === 'string' && v.indexOf('@') > -1) return v;
+                    v = rl.settings.get('MainEmail');
+                    if (typeof v === 'string' && v.indexOf('@') > -1) return v;
+                }
+                // 模式 2：rl.app 暴露
+                if (rl.app) {
+                    if (typeof rl.app.email === 'string' && rl.app.email.indexOf('@') > -1) return rl.app.email;
+                    if (typeof rl.app.currentEmail === 'string' && rl.app.currentEmail.indexOf('@') > -1) return rl.app.currentEmail;
+                }
             }
         } catch (e) {}
-        var headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json',
-            'X-SM-Token': token
-        };
-
-        function bodyFor(actionName) {
-            return new URLSearchParams({
-                Action: actionName,            // 冗余：dispatcher 可能从 body 读
-                OldPassword: oldp,
-                NewPassword: newp
-            });
-        }
-
-        function isActionUnknown(j) {
-            if (!j) return false;
-            if (j.Action === 'Unknown') return true;
-            if (j.code === 903) return true;
-            if (j.message && /InvalidInputArgument/i.test(j.message)) return true;
-            if (j.messageAdditional && /Action\s+unknown/i.test(j.messageAdditional)) return true;
-            return false;
-        }
-
-        function tryNext(i) {
-            if (i >= paths.length) {
-                return Promise.reject(new Error(
-                    '所有 URL pattern 都被 SnappyMail 当作 "Action unknown" 拒绝 —— ' +
-                    '说明 addJsonHook 在你这个 SnappyMail 版本上没把 action 注册到 dispatcher 里。' +
-                    '请把 PHP error log（journalctl -u php8.2-fpm 或 /var/log/php*.log）发给我。'
-                ));
+        // 模式 3：从右上角账号下拉的 title 或文本里读
+        try {
+            var sel = [
+                '[data-bind*="accountEmail"]',
+                '.accountPlace',
+                '#top-system-dropdown-id'
+            ];
+            for (var i = 0; i < sel.length; i++) {
+                var el = document.querySelector(sel[i]);
+                if (!el) continue;
+                var t = (el.getAttribute('title') || el.textContent || '').trim();
+                var m = t.match(/[\w.+-]+@[\w.-]+\.\w+/);
+                if (m) return m[0];
             }
-            var p = paths[i];
-            return fetch(p.url, {
-                method: 'POST',
-                body: bodyFor(p.action),
-                headers: headers,
-                credentials: 'same-origin'
-            })
-                .then(function (r) {
-                    if (!r.ok) throw new Error('HTTP ' + r.status);
-                    return r.json();
-                })
-                .then(function (j) {
-                    // SnappyMail 不认 action 名的标志（多种格式都识别）→ 试下一个
-                    if (isActionUnknown(j)) {
-                        try { console.warn('[UNICODE] action-unknown at ' + p.url, j); } catch (e) {}
-                        throw new Error('action-unknown');
-                    }
-                    // 我们 PHP 端约定返回 {Result: {success: bool, ...}}
-                    if (j && j.Result && typeof j.Result === 'object') return j;
-                    // 其他奇怪格式：直接返给上层
-                    return j;
-                })
-                .catch(function (e) {
-                    if (i + 1 < paths.length) return tryNext(i + 1);
-                    throw e;
-                });
+        } catch (e) {}
+        return null;
+    }
+
+    function changePasswordRequest(oldp, newp) {
+        // 绕过 SnappyMail 的 plugin Ajax 系统（addJsonHook 在 2.38 上不
+        // 支持注册新 action）。打 /api-pw-change —— nginx vhost 里有专门
+        // 的 location 直接路由到 /ewomail/www/ewomail-admin/api-pw-change.php
+        // 处理。需要把当前邮箱明确传过去（PHP 端用 email+old 一起验）。
+        var email = getCurrentEmail();
+        if (!email) {
+            return Promise.reject(new Error('无法获取当前邮箱地址 —— 请刷新页面后再试，或登出重新登入'));
         }
-        return tryNext(0);
+        try { console.log('[UNICODE] change-password for:', email); } catch (e) {}
+
+        return fetch('/api-pw-change', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'
+            },
+            body: new URLSearchParams({ email: email, old: oldp, 'new': newp })
+        }).then(function (r) {
+            return r.json().then(function (j) {
+                // 包成 {Result: ...} 兼容上层期望的 SnappyMail 风格 shape
+                return { Result: j, _httpStatus: r.status };
+            }).catch(function () {
+                throw new Error('HTTP ' + r.status + '（响应非 JSON）');
+            });
+        });
     }
 
     // 监听 DOM 变化 —— SnappyMail 异步渲染设置/文件夹列表
