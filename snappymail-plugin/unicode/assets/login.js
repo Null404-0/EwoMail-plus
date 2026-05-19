@@ -269,13 +269,29 @@
         // 某些主题/版本会把“filterUnseen”渲染成左侧一个名为“不可见”的伪文件夹，
         // 不是实际邮箱目录，容易让用户困惑。这里按名字精确隐藏该项。
         try {
-            var doc = document;
-            var xp = ".//*[normalize-space(text())='不可见']";
-            var rs = doc.evaluate(xp, (root && root.nodeType === 1) ? root : doc, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-            for (var i = 0; i < rs.snapshotLength; i++) {
-                var el = rs.snapshotItem(i);
-                var row = (el.closest && (el.closest('li') || el.closest('[role=\"treeitem\"]') || el.closest('.b-folders-item') || el.closest('.e-item'))) || el;
+            var hideRow = function (el) {
+                var row = (el.closest && (el.closest('li') || el.closest('[role="treeitem"]') || el.closest('.b-folders-item') || el.closest('.e-item'))) || el;
                 row.style.display = 'none';
+            };
+            var done = false;
+            // 优先 XPath：精确命中文本节点
+            if (document.evaluate) {
+                var doc = document;
+                var xp = ".//*[normalize-space(text())='不可见']";
+                var rs = doc.evaluate(xp, (root && root.nodeType === 1) ? root : doc, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                for (var i = 0; i < rs.snapshotLength; i++) {
+                    hideRow(rs.snapshotItem(i));
+                    done = true;
+                }
+            }
+            // 回退：遍历常见元素按可见文本匹配
+            if (!done) {
+                (root || document).querySelectorAll('a, span, div, li').forEach(function (el) {
+                    if (!el || !el.textContent) return;
+                    var txt = (el.textContent || '').trim();
+                    if (txt !== '不可见') return;
+                    hideRow(el);
+                });
             }
         } catch (e) { /* ignore */ }
     }
