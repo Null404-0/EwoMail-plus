@@ -46,6 +46,74 @@ class Helper
         return ['ok' => $rc === 0, 'out' => $out, 'rc' => $rc];
     }
 
+    /**
+     * Stream helper stdout directly to the browser. Intended for downloads.
+     * Stderr is captured separately so binary stdout is never polluted.
+     */
+    public static function stream(array $args, &$err = '')
+    {
+        $cmd = 'sudo -n ' . escapeshellarg(self::HELPER);
+        foreach ($args as $a) {
+            $cmd .= ' ' . escapeshellarg($a);
+        }
+
+        $proc = proc_open($cmd, [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ], $pipes);
+        if (!is_resource($proc)) {
+            $err = 'proc_open failed';
+            return -1;
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+        $stdoutOpen = true;
+        $stderrOpen = true;
+        $err = '';
+
+        while ($stdoutOpen || $stderrOpen) {
+            $read = [];
+            if ($stdoutOpen) $read[] = $pipes[1];
+            if ($stderrOpen) $read[] = $pipes[2];
+            $write = null;
+            $except = null;
+            $ready = @stream_select($read, $write, $except, 1);
+            if ($ready === false) {
+                break;
+            }
+            if ($ready === 0) {
+                continue;
+            }
+            foreach ($read as $pipe) {
+                $chunk = fread($pipe, 8192);
+                if ($chunk !== false && $chunk !== '') {
+                    if ($pipe === $pipes[1]) {
+                        echo $chunk;
+                        if (function_exists('flush')) flush();
+                    } else {
+                        $err .= $chunk;
+                    }
+                }
+                if (feof($pipe)) {
+                    if ($pipe === $pipes[1]) {
+                        fclose($pipes[1]);
+                        $stdoutOpen = false;
+                    } else {
+                        fclose($pipes[2]);
+                        $stderrOpen = false;
+                    }
+                }
+            }
+        }
+
+        if ($stdoutOpen) fclose($pipes[1]);
+        if ($stderrOpen) fclose($pipes[2]);
+        return proc_close($proc);
+    }
+
     public static function validatePortProto($s)
     {
         return (bool)preg_match('#^[0-9]{1,5}/(tcp|udp)$#', $s);

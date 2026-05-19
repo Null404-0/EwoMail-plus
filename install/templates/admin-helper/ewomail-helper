@@ -49,6 +49,8 @@ Certificate:
   cert-renew <fqdn>
   cert-list
   cert-install <fqdn>                      copy current cert to /etc/ssl/ewomail
+  cert-backup                              download deployed cert/key as .tar.gz
+  cert-restore                             restore .tar.gz from stdin and reload services
 
 Service:
   svc-status <name>
@@ -103,6 +105,30 @@ acme_has_domain_cert() {
         }
         END { exit found ? 0 : 1 }
     '
+}
+
+reload_mail_tls_services() {
+    systemctl reload nginx 2>/dev/null || true
+    systemctl reload postfix 2>/dev/null || true
+    systemctl reload dovecot 2>/dev/null || true
+}
+
+cert_key_matches() {
+    local cert="$1" key="$2" tmpdir cert_pub key_pub rc
+    tmpdir=$(mktemp -d) || return 1
+    cert_pub="${tmpdir}/cert.pub"
+    key_pub="${tmpdir}/key.pub"
+
+    if openssl x509 -in "${cert}" -pubkey -noout >"${cert_pub}" 2>/dev/null &&
+       openssl pkey -in "${key}" -pubout >"${key_pub}" 2>/dev/null &&
+       cmp -s "${cert_pub}" "${key_pub}"; then
+        rc=0
+    else
+        rc=$?
+    fi
+
+    rm -rf "${tmpdir}"
+    return "${rc}"
 }
 
 valid_service() {
@@ -459,6 +485,49 @@ EOF
     cert-install)
         [[ $# -eq 1 ]] && valid_fqdn "$1" || usage
         acme_install_cert "$1"
+        ;;
+
+    cert-backup)
+        # Write only the archive to stdout. Diagnostics go to stderr so PHP can
+        # safely stream the response as a browser download.
+        [[ -f /etc/ssl/ewomail/fullchain.pem && -f /etc/ssl/ewomail/private/privkey.pem ]] || {
+            echo 'missing deployed certificate or private key' >&2
+            exit 1
+        }
+        tar -C / -czf - etc/ssl/ewomail/fullchain.pem etc/ssl/ewomail/private/privkey.pem
+        ;;
+    cert-restore)
+        [[ $# -eq 0 ]] || usage
+        tmpdir=$(mktemp -d)
+        cleanup() { rm -rf "${tmpdir}"; }
+        trap cleanup EXIT
+        cat > "${tmpdir}/upload.tar.gz"
+        [[ -s "${tmpdir}/upload.tar.gz" ]] || { echo 'empty backup file' >&2; exit 1; }
+
+        tar -tzf "${tmpdir}/upload.tar.gz" > "${tmpdir}/files.txt" || { echo 'invalid tar.gz backup' >&2; exit 1; }
+        while IFS= read -r name; do
+            case "${name}" in
+                etc/ssl/ewomail/fullchain.pem|etc/ssl/ewomail/private/privkey.pem) ;;
+                *) echo "unexpected file in backup: ${name}" >&2; exit 1 ;;
+            esac
+        done < "${tmpdir}/files.txt"
+
+        tar -C "${tmpdir}" -xzf "${tmpdir}/upload.tar.gz"
+        cert="${tmpdir}/etc/ssl/ewomail/fullchain.pem"
+        key="${tmpdir}/etc/ssl/ewomail/private/privkey.pem"
+        [[ -s "${cert}" && -s "${key}" ]] || { echo 'backup must contain fullchain.pem and privkey.pem' >&2; exit 1; }
+        openssl x509 -in "${cert}" -noout >/dev/null 2>&1 || { echo 'invalid certificate PEM' >&2; exit 1; }
+        openssl pkey -in "${key}" -noout >/dev/null 2>&1 || { echo 'invalid private key PEM' >&2; exit 1; }
+        cert_key_matches "${cert}" "${key}" || { echo 'certificate and private key do not match' >&2; exit 1; }
+
+        stamp=$(date +%Y%m%d%H%M%S)
+        mkdir -p /etc/ssl/ewomail/private /etc/ssl/ewomail/backup
+        [[ -f /etc/ssl/ewomail/fullchain.pem ]] && cp -a /etc/ssl/ewomail/fullchain.pem "/etc/ssl/ewomail/backup/fullchain.pem.${stamp}"
+        [[ -f /etc/ssl/ewomail/private/privkey.pem ]] && cp -a /etc/ssl/ewomail/private/privkey.pem "/etc/ssl/ewomail/backup/privkey.pem.${stamp}"
+        install -m 0644 -o root -g root "${cert}" /etc/ssl/ewomail/fullchain.pem
+        install -m 0600 -o root -g root "${key}" /etc/ssl/ewomail/private/privkey.pem
+        reload_mail_tls_services
+        echo 'restored'
         ;;
 
     # ---- Service ----

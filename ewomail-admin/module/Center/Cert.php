@@ -104,6 +104,49 @@ Rout::put('renew', function () {
     }
 });
 
+Rout::get('backup', function () {
+    $cur = Helper::run(['cert-current']);
+    if (!$cur['ok'] || trim($cur['out']) === '' || strpos($cur['out'], 'missing') !== false) {
+        E::error('尚未部署证书，无法备份。');
+    }
+
+    while (ob_get_level()) ob_end_clean();
+    $filename = 'ewomail-ssl-backup-' . date('Ymd-His') . '.tar.gz';
+    header('Content-Type: application/gzip');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    header('Pragma: no-cache');
+    $err = '';
+    $rc = Helper::stream(['cert-backup'], $err);
+    if ($rc !== 0) {
+        // Headers may already be sent; the precheck above should make this rare.
+        error_log('cert-backup failed: ' . $err);
+    }
+    exit;
+});
+
+Rout::put('restore', function () {
+    if (empty($_FILES['backup']) || !isset($_FILES['backup']['tmp_name'])) {
+        E::error('请选择证书备份文件。');
+    }
+    $f = $_FILES['backup'];
+    if (!empty($f['error'])) {
+        E::error('上传失败，错误码：' . $f['error']);
+    }
+    if (!is_uploaded_file($f['tmp_name'])) {
+        E::error('上传文件无效。');
+    }
+    if ((int)$f['size'] <= 0 || (int)$f['size'] > 1024 * 1024) {
+        E::error('备份文件大小异常，请上传 1MB 以内的 .tar.gz 文件。');
+    }
+    $data = file_get_contents($f['tmp_name']);
+    if ($data === false || $data === '') {
+        E::error('读取上传文件失败。');
+    }
+    $r = Helper::run(['cert-restore'], $data);
+    $r['ok'] ? E::success('证书已恢复并重载 Nginx/Postfix/Dovecot。') : E::error('恢复失败：' . $r['out']);
+});
+
 Rout::put('install', function () {
     $d = trim(ipost('domain'));
     if (!Helper::validateFqdn($d)) E::error('域名格式无效');
