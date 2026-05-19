@@ -189,37 +189,43 @@
         return body;
     }
 
-    // fetch
-    if (typeof window.fetch === 'function') {
-        var _origFetch = window.fetch;
-        window.fetch = function (input, init) {
+    // 只在 Turnstile 真的启用时才 monkey-patch fetch / XHR。
+    // 没启用的话整段 patch 都不挂 —— 这样 SnappyMail 所有 ajax 请求都走原生
+    // 路径，Initiator 不会指到我们 login.js（之前注销报错 + 浏览器 dev tools
+    // 把 net::ERR 算到我们头上就是因为 fetch 被 wrap 了，虽然我们什么都没动）
+    if (TURNSTILE_ENABLED && TURNSTILE_SITE_KEY) {
+        // fetch
+        if (typeof window.fetch === 'function') {
+            var _origFetch = window.fetch;
+            window.fetch = function (input, init) {
+                try {
+                    var url = (typeof input === 'string') ? input : (input && input.url);
+                    if (isLoginRequest(url) && init && init.method &&
+                        init.method.toUpperCase() === 'POST' && turnstileToken) {
+                        init.body = injectToken(init.body);
+                    }
+                } catch (e) { /* 不阻断原请求 */ }
+                return _origFetch.apply(this, arguments);
+            };
+        }
+
+        // XHR
+        var _origOpen = XMLHttpRequest.prototype.open;
+        var _origSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function (method, url) {
+            this._unicodeUrl = url;
+            this._unicodeMethod = (method || '').toUpperCase();
+            return _origOpen.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.send = function (body) {
             try {
-                var url = (typeof input === 'string') ? input : (input && input.url);
-                if (isLoginRequest(url) && init && init.method &&
-                    init.method.toUpperCase() === 'POST' && turnstileToken) {
-                    init.body = injectToken(init.body);
+                if (this._unicodeMethod === 'POST' && isLoginRequest(this._unicodeUrl) && turnstileToken) {
+                    body = injectToken(body);
                 }
-            } catch (e) { /* 不阻断原请求 */ }
-            return _origFetch.apply(this, arguments);
+            } catch (e) { /* 不阻断 */ }
+            return _origSend.call(this, body);
         };
     }
-
-    // XHR
-    var _origOpen = XMLHttpRequest.prototype.open;
-    var _origSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function (method, url) {
-        this._unicodeUrl = url;
-        this._unicodeMethod = (method || '').toUpperCase();
-        return _origOpen.apply(this, arguments);
-    };
-    XMLHttpRequest.prototype.send = function (body) {
-        try {
-            if (this._unicodeMethod === 'POST' && isLoginRequest(this._unicodeUrl) && turnstileToken) {
-                body = injectToken(body);
-            }
-        } catch (e) { /* 不阻断 */ }
-        return _origSend.call(this, body);
-    };
 
     // ---------- 抑制不需要的弹窗 + 隐藏不需要的菜单项 ----------
     //
