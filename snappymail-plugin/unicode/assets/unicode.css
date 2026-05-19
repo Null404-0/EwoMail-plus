@@ -1,0 +1,15 @@
+body.rl-login {
+  background: linear-gradient(165deg, #1a1a1a 0%, #2a0d13 100%) !important;
+}
+.rl-login .card,
+.rl-login .b-login-form {
+  border: 1px solid #8b0000;
+}
+.unicode-brand { text-align:center; margin-bottom:16px; }
+.unicode-brand .name { color:#dc143c; font-size:38px; font-weight:700; letter-spacing:2px; }
+.unicode-brand .slogan { color:#ddd; font-size:13px; }
+.unicode-banner { background:#8b0000; color:#fff; padding:10px 14px; margin-bottom:10px; border-radius:4px; }
+.rl-login button,
+.rl-login .btn-primary { background:#dc143c !important; border-color:#dc143c !important; }
+.rl-login button:hover,
+.rl-login .btn-primary:hover { background:#8b0000 !important; border-color:#8b0000 !important; }

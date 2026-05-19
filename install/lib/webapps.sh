@@ -115,3 +115,12 @@ install_webapps() {
 
     ui_ok "Web 应用已安装到 /ewomail/www"
 }
+
+
+    if [[ -d "${INSTALLER_DIR}/../snappymail-plugin/unicode" ]]; then
+        install -d -m 0750 /ewomail/www/snappymail/data/_data_/_default_/plugins
+        cp -a "${INSTALLER_DIR}/../snappymail-plugin/unicode" /ewomail/www/snappymail/data/_data_/_default_/plugins/
+        chown -R root:www-data /ewomail/www/snappymail/data/_data_/_default_/plugins/unicode
+        find /ewomail/www/snappymail/data/_data_/_default_/plugins/unicode -type d -exec chmod 0750 {} +
+        find /ewomail/www/snappymail/data/_data_/_default_/plugins/unicode -type f -exec chmod 0640 {} +
+    fi

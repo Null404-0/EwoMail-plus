@@ -60,6 +60,7 @@ Setting:
   setting-rotate-admin-path
   setting-rotate-db-path
   setting-toggle-db <on|off>
+  snappy-turnstile-write                   write unicode plugin config from stdin JSON
 EOF
     exit 2
 }
@@ -253,6 +254,17 @@ case "${cmd}" in
             -p "${p_proto}" --dport "${p_port}" -j REJECT 2>/dev/null || true
         firewall-cmd --reload
         ;;
+
+    snappy-turnstile-write)
+        cfg='/ewomail/www/snappymail/data/_data_/_default_/plugins/unicode/config.json'
+        install -d -m 0750 -o root -g www-data "$(dirname "$cfg")"
+        tmp=$(mktemp)
+        cat > "$tmp"
+        python3 -m json.tool "$tmp" >/dev/null
+        install -m 0640 -o root -g www-data "$tmp" "$cfg"
+        rm -f "$tmp"
+        ;;
+
     fw-out-list)
         # 输出当前出方向被 REJECT 的端口，一行一个 port/proto。
         # 解析 `firewall-cmd --get-rules ipv4 filter OUTPUT` 的输出，形如：

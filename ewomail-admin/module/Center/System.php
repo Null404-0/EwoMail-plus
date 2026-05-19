@@ -115,3 +115,38 @@ Rout::put('webmail-config', function () {
 
 
 
+
+
+Rout::get('turnstile-config', function () {
+    Admin::setMenu(208, 'Turnstile 设置');
+    Tp::assign(['data' => [
+        'turnstile_enabled' => Helper::setting('turnstile_enabled', '0'),
+        'turnstile_site_key' => Helper::setting('turnstile_site_key', ''),
+        'turnstile_secret_key' => Helper::setting('turnstile_secret_key', '')
+    ]]);
+    Tp::display();
+});
+
+Rout::put('turnstile-config', function () {
+    $enabled = ipost('turnstile_enabled') === '1' ? '1' : '0';
+    $siteKey = trim((string)ipost('turnstile_site_key'));
+    $secret = trim((string)ipost('turnstile_secret_key'));
+    Helper::settingSet('turnstile_enabled', $enabled);
+    Helper::settingSet('turnstile_site_key', $siteKey);
+    Helper::settingSet('turnstile_secret_key', $secret);
+
+    $payload = json_encode([
+        'turnstile_enabled' => $enabled,
+        'turnstile_site_key' => $siteKey,
+        'turnstile_secret_key' => $secret,
+        'outbound_disabled' => Helper::setting('outbound_disabled', 'no')
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $r = Helper::run(['snappy-turnstile-write'], $payload . "
+");
+    if (!$r['ok']) {
+        E::error('写入 SnappyMail 插件配置失败：' . $r['out']);
+    }
+    AdminLog::save(['ac' => 'edit', 'c' => 'Turnstile 设置']);
+    E::success('已保存');
+});
+

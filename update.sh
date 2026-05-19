@@ -303,6 +303,7 @@ CREATE TABLE IF NOT EXISTS i_day_record (
 INSERT IGNORE INTO i_admin_menu (menu_id, mark, lang, url, top_id, edit, del, edit_id, sort) VALUES
   (106, '数据导入/导出','数据导入/导出','/DataPort', 100, 0, 0, 0, 10),
   (207, 'Webmail 品牌','Webmail 品牌','/System/webmail-config', 200, 1, 0, 0, 40),
+  (208, 'Turnstile 设置','Turnstile 设置','/System/turnstile-config', 200, 1, 0, 0, 41),
   (300, '服务器',  '服务器',   '',          0,   0, 0, 0, 50),
   (301, '防火墙',  '防火墙',   '/Firewall', 300, 1, 1, 0, 51),
   (302, 'Nginx',  'Nginx',     '/Nginx',    300, 1, 0, 0, 52),
@@ -337,3 +338,10 @@ echo
 ui_ok "更新完成。"
 ui_info "如发现问题，本次操作前的配置备份在 ${BACKUP_DIR}"
 ui_info "回滚单文件：cp ${BACKUP_DIR}/<path> <path>  然后  systemctl reload <svc>"
+
+# sync snappymail unicode plugin
+if [[ -d "${ROOT_DIR}/snappymail-plugin/unicode" ]]; then
+  install -d -m 0750 /ewomail/www/snappymail/data/_data_/_default_/plugins
+  cp -a "${ROOT_DIR}/snappymail-plugin/unicode" /ewomail/www/snappymail/data/_data_/_default_/plugins/
+  chown -R root:www-data /ewomail/www/snappymail/data/_data_/_default_/plugins/unicode || true
+fi

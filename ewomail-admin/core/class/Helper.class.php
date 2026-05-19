@@ -138,6 +138,9 @@ class Helper
             'admin_path', 'db_path', 'db_admin_enable',
             'mail_host', 'public_ip', 'le_email',
             'outbound_disabled',  // set by helper, may be read by panel
+            'turnstile_enabled',
+            'turnstile_site_key',
+            'turnstile_secret_key',
             'fw_port_descs',      // JSON: per-port custom description overrides
         ];
     }
