@@ -42,6 +42,10 @@ class UnicodePlugin extends \RainLoop\Plugins\AbstractPlugin
         $this->addHook('login.credentials',        'BeforeLogin');
         $this->addHook('login.credentials.step-1', 'BeforeLogin');
         $this->addHook('login.credentials.step-2', 'BeforeLogin');
+
+        // 修改密码 JSON 端点 —— SnappyMail 没自带 SQL backend 的
+        // change-password plugin，我们自己接 EwoMail 的 i_users 表更直接。
+        $this->addJsonHook('UnicodeChangePassword', 'doChangePassword');
     }
 
     /** 读 plugin 目录下的 config.json，结果 in-memory 缓存。 */
@@ -130,5 +134,89 @@ class UnicodePlugin extends \RainLoop\Plugins\AbstractPlugin
         }
         $j = json_decode($resp, true);
         return is_array($j) && !empty($j['success']);
+    }
+
+    /**
+     * 修改密码 JSON 端点。前端 login.js 通过 fetch 调到这里。
+     *
+     * SnappyMail 把 plugin 注册的 addJsonHook 路由进它的 Json action 体系，
+     * 自动复用 session（要求用户已登录），且把方法返回值序列化成 JSON 响应。
+     * 返回数组结构按 SnappyMail 习惯：{Result: ...} 或 {Error: ...}。
+     *
+     * 不让客户端传 email —— 直接从 SnappyMail 当前登录的 account 拿，防被
+     * 越权改别人密码。
+     */
+    public function doChangePassword()
+    {
+        try {
+            $oActions = \RainLoop\Api::Actions();
+            $oAccount = null;
+            // SnappyMail 不同版本拿当前账户的方法名不同，挨个试
+            foreach (['getAccountFromToken', 'getMainAccountFromToken', 'GetAccount'] as $m) {
+                if (method_exists($oActions, $m)) {
+                    try { $oAccount = $oActions->$m(); } catch (\Throwable $e) { /* try next */ }
+                    if ($oAccount) break;
+                }
+            }
+            if (!$oAccount) {
+                return ['Result' => ['success' => false, 'error' => '未登录或会话已过期，请重新登录']];
+            }
+            $email = method_exists($oAccount, 'Email') ? (string)$oAccount->Email() : '';
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return ['Result' => ['success' => false, 'error' => '无法获取当前用户邮箱']];
+            }
+
+            $oldPwd = isset($_POST['OldPassword']) ? (string)$_POST['OldPassword'] : '';
+            $newPwd = isset($_POST['NewPassword']) ? (string)$_POST['NewPassword'] : '';
+
+            if (strlen($newPwd) < 8 || strlen($newPwd) > 64) {
+                return ['Result' => ['success' => false, 'error' => '新密码长度需 8-64 位']];
+            }
+            if ($oldPwd === '') {
+                return ['Result' => ['success' => false, 'error' => '当前密码不能为空']];
+            }
+            if ($oldPwd === $newPwd) {
+                return ['Result' => ['success' => false, 'error' => '新密码不能和当前密码相同']];
+            }
+
+            // 读 EwoMail 的 DB 配置 —— PHP-FPM 的 open_basedir 允许 /ewomail/www/
+            $cfgFile = '/ewomail/www/ewomail-admin/core/config.php';
+            if (!is_readable($cfgFile)) {
+                return ['Result' => ['success' => false, 'error' => '服务器配置不可读']];
+            }
+            $cfg = @include $cfgFile;
+            if (!is_array($cfg) || empty($cfg['dbhost']) || empty($cfg['dbname'])) {
+                return ['Result' => ['success' => false, 'error' => '服务器 DB 配置异常']];
+            }
+
+            $pdo = new \PDO(
+                "mysql:host={$cfg['dbhost']};dbname={$cfg['dbname']};charset=utf8mb4",
+                (string)$cfg['dbuser'],
+                (string)$cfg['dbpw'],
+                [
+                    \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                    \PDO::ATTR_EMULATE_PREPARES => false,
+                ]
+            );
+
+            // 验证当前密码（EwoMail 用 MD5）—— 用 prepared statement 防 SQL 注入
+            $stmt = $pdo->prepare("SELECT id FROM i_users WHERE email = ? AND password = MD5(?) LIMIT 1");
+            $stmt->execute([$email, $oldPwd]);
+            if (!$stmt->fetchColumn()) {
+                return ['Result' => ['success' => false, 'error' => '当前密码错误']];
+            }
+
+            // 更新
+            $stmt = $pdo->prepare("UPDATE i_users SET password = MD5(?) WHERE email = ?");
+            $stmt->execute([$newPwd, $email]);
+            if ($stmt->rowCount() < 1) {
+                return ['Result' => ['success' => false, 'error' => '密码更新失败']];
+            }
+
+            return ['Result' => ['success' => true, 'message' => '密码已修改，下次登录请使用新密码']];
+        } catch (\Throwable $e) {
+            error_log('UNICODE doChangePassword error: ' . $e->getMessage());
+            return ['Result' => ['success' => false, 'error' => '服务器错误']];
+        }
     }
 }

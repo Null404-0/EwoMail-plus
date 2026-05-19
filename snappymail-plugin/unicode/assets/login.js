@@ -223,15 +223,12 @@
 
     // ---------- 抑制不需要的弹窗 + 隐藏不需要的菜单项 ----------
     //
-    // 用 MutationObserver 监听 body 新增节点和子树变化。多种识别策略并用：
-    //   - 弹窗：内容文本含「更新身份 / Update Identity / Welcome / 欢迎」→ 点关闭
-    //   - 文件夹列表里的「不可见 / Invisible / not visible / Hidden」假节点 → 隐藏
-    //   - 设置侧栏的「主题 / Themes」入口 → 隐藏并阻塞跳转
-    // 文本识别比 class 名稳定 —— SnappyMail 不同版本 class 名变化大。
+    // 用 MutationObserver 监听 body 新增节点和子树变化。
+    // - 弹窗：内容文本含「更新身份 / Update Identity / Welcome / 欢迎」→ 点关闭
+    // - 文件夹列表里 SnappyMail 的「filter unseen」勾选框（中文 i18n 翻成
+    //   "不可见"，意义不明）→ data-bind 精准匹配隐藏
 
     var POPUP_KILL_HINTS = /更新身份|Update Identity|欢迎|welcome|onboard|首次登录/i;
-    var INVISIBLE_FOLDER = /^\s*(不可见|invisible|hidden|not\s*visible)\s*$/i;
-    var THEME_LABEL      = /^\s*(主题|Themes?|Theme)\s*$/i;
 
     function killPopup(node) {
         try {
@@ -252,57 +249,205 @@
         } catch (e) { return false; }
     }
 
-    function hideInvisibleFolders(root) {
-        // SnappyMail 文件夹列表 ul/li 结构里有一行"不可见"是 system pseudo-folder
-        // 用于让用户取消订阅别的文件夹。普通用户看着困惑，隐藏掉。
+    function hideInvisibleToggle(root) {
+        // SnappyMail 文件夹列表里有一行 toggle: filterUnseen 的 checkbox，
+        // 中文 i18n 译成"不可见"显得莫名其妙，隐藏掉。
+        // 用 data-bind 精准匹配比文本匹配可靠（不同语言都有效）。
         try {
-            var liList = (root || document).querySelectorAll('li, .b-folder-item');
-            liList.forEach(function (li) {
-                // 只看直接文本，避免误把含子文件夹的节点也藏了
-                var label = li.querySelector('.name, [data-bind*="text"], a, span');
-                var t = label ? (label.textContent || '').trim() : '';
-                if (INVISIBLE_FOLDER.test(t)) {
-                    li.style.display = 'none';
-                    li.setAttribute('aria-hidden', 'true');
-                }
+            (root || document).querySelectorAll('[data-bind*="filterUnseen"]').forEach(function (el) {
+                var container = (el.closest && el.closest('.e-checkbox')) || el;
+                container.style.display = 'none';
             });
-        } catch (e) { /* ignore */ }
-    }
-
-    function hideThemeMenu(root) {
-        try {
-            // 1) data-route / href 匹配
-            (root || document).querySelectorAll(
-                'a[href*="themes" i], a[href*="theme" i][href*="settings" i], ' +
-                '[data-route*="theme" i], [data-name="Themes"], ' +
-                'li[data-name*="theme" i]'
-            ).forEach(function (el) { el.style.display = 'none'; });
-
-            // 2) 文本匹配兜底 —— 任意 a/li/span 直接文本是"主题"或"Themes"
-            (root || document).querySelectorAll('a, li').forEach(function (el) {
-                // 跳过有子 ul 的（避免误把"系统设置"之类带"主题"子菜单的整段藏了）
-                if (el.querySelector('ul, .b-folder-list')) return;
-                var t = (el.textContent || '').trim();
-                if (THEME_LABEL.test(t)) {
-                    var li = el.closest ? (el.closest('li') || el) : el;
-                    li.style.display = 'none';
-                }
-            });
-
-            // 3) 如果用户已经在 /settings/themes 路径上，把内容区也清掉
-            if (/\/settings\/themes/i.test(location.hash || location.pathname)) {
-                var main = document.querySelector('.b-settings-pane, .b-settings, main');
-                if (main) {
-                    main.innerHTML = '<div style="padding:30px;color:#888">主题已被管理员锁定为 UNICODE。</div>';
-                }
-            }
         } catch (e) { /* ignore */ }
     }
 
     function sweep(root) {
         killPopup(root || document.body);
-        hideInvisibleFolders(root);
-        hideThemeMenu(root);
+        hideInvisibleToggle(root);
+        injectPasswordMenu(root);
+    }
+
+    // ---------- "密码" 设置入口 ----------
+    //
+    // SnappyMail 2.38 自带的 change-password plugin 只支持 poppassd / ldap /
+    // virtualmin 几个后端，没 MySQL（EwoMail 的密码存 i_users.password 是 MD5）。
+    // 我们自己加一个：
+    //   1. 在 Settings 侧栏的"安全"后面插一行"密码"
+    //   2. 点击 → 弹自定义 modal → 填当前 / 新 / 确认
+    //   3. 提交到 UnicodeChangePassword JSON 端点（addJsonHook 注册的，PHP 端
+    //      自己接 EwoMail DB 改 i_users）
+    //
+    // 用 Knockout-friendly 的 attribute hooks，避开和 SnappyMail 自己的 binding
+    // 打架。SnappyMail 路由切换会重新渲染菜单，导致我们注入的链接消失 ——
+    // MutationObserver 每次都会再 sweep 进来补上。
+
+    function injectPasswordMenu(root) {
+        try {
+            // 只在 Settings 页面（路由 #/settings/...）注入
+            if (!/\#\/settings/i.test(location.hash || '')) return;
+            // 找设置侧栏的 nav
+            var navs = (root || document).querySelectorAll('nav, .b-settings-menu nav, [data-bind*="foreach: menu"]');
+            navs.forEach(function (nav) {
+                // 已经注入过就跳
+                if (nav.querySelector('[data-unicode-pw]')) return;
+                // 至少要有几个原生菜单项再注入，防误注入到其他 nav
+                var existing = nav.querySelectorAll('a[data-i18n], a[href*="settings/"]');
+                if (existing.length < 2) return;
+
+                var link = document.createElement('a');
+                link.setAttribute('data-unicode-pw', '1');
+                link.setAttribute('href', 'javascript:;');
+                link.textContent = '密码';
+                link.style.cursor = 'pointer';
+                // 复制兄弟 link 的 class，视觉跟原生一致
+                var sibling = existing[0];
+                if (sibling && sibling.className) link.className = sibling.className;
+                link.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // 取消别的 "selected" 状态，给自己加上
+                    nav.querySelectorAll('a.selected').forEach(function (a) { a.classList.remove('selected'); });
+                    link.classList.add('selected');
+                    showPasswordModal();
+                });
+
+                // 插在"安全"之后；找不到就在末尾
+                var security = Array.from(existing).find(function (a) {
+                    var i18n = (a.getAttribute('data-i18n') || '').toLowerCase();
+                    var href = (a.getAttribute('href') || '').toLowerCase();
+                    return /security/.test(i18n) || /security/.test(href);
+                });
+                if (security && security.nextSibling) {
+                    nav.insertBefore(link, security.nextSibling);
+                } else {
+                    nav.appendChild(link);
+                }
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    function showPasswordModal() {
+        // 如果已经有 modal 就别重复开
+        if (document.getElementById('unicode-pw-modal')) return;
+
+        var html =
+            '<div id="unicode-pw-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:99999;display:flex;align-items:center;justify-content:center;">' +
+              '<div style="background:#1a1a1a;color:#e5e5e5;padding:28px 32px;border-radius:6px;border:1px solid #dc143c;width:420px;max-width:92vw;box-shadow:0 10px 50px rgba(0,0,0,0.7),0 0 0 1px rgba(220,20,60,0.15);">' +
+                '<h3 style="margin:0 0 18px;color:#dc143c;font-size:18px;font-weight:700;letter-spacing:1px">修改密码</h3>' +
+                '<form id="unicode-pw-form">' +
+                  '<div style="margin-bottom:14px">' +
+                    '<label style="display:block;margin-bottom:5px;font-size:13px;color:#bbb">当前密码</label>' +
+                    '<input type="password" name="old" required ' +
+                      'style="width:100%;padding:9px 10px;background:#222;border:1px solid #3a3a3a;color:#eee;border-radius:3px;box-sizing:border-box">' +
+                  '</div>' +
+                  '<div style="margin-bottom:14px">' +
+                    '<label style="display:block;margin-bottom:5px;font-size:13px;color:#bbb">新密码（8-64 位）</label>' +
+                    '<input type="password" name="newp" required minlength="8" maxlength="64" ' +
+                      'style="width:100%;padding:9px 10px;background:#222;border:1px solid #3a3a3a;color:#eee;border-radius:3px;box-sizing:border-box">' +
+                  '</div>' +
+                  '<div style="margin-bottom:16px">' +
+                    '<label style="display:block;margin-bottom:5px;font-size:13px;color:#bbb">再次输入新密码</label>' +
+                    '<input type="password" name="confirm" required ' +
+                      'style="width:100%;padding:9px 10px;background:#222;border:1px solid #3a3a3a;color:#eee;border-radius:3px;box-sizing:border-box">' +
+                  '</div>' +
+                  '<div id="unicode-pw-msg" style="min-height:1.4em;margin-bottom:12px;font-size:13px;color:#dc143c"></div>' +
+                  '<div style="display:flex;gap:10px;">' +
+                    '<button type="submit" style="flex:1;padding:10px;background:linear-gradient(180deg,#dc143c,#b30f30);color:#fff;border:none;border-radius:3px;cursor:pointer;font-weight:600;letter-spacing:1px">修改</button>' +
+                    '<button type="button" id="unicode-pw-cancel" style="flex:1;padding:10px;background:#3a3a3a;color:#ccc;border:none;border-radius:3px;cursor:pointer">取消</button>' +
+                  '</div>' +
+                '</form>' +
+              '</div>' +
+            '</div>';
+        document.body.insertAdjacentHTML('beforeend', html);
+
+        function close() {
+            var m = document.getElementById('unicode-pw-modal');
+            if (m) m.remove();
+        }
+        document.getElementById('unicode-pw-cancel').addEventListener('click', close);
+        // ESC 关闭
+        document.addEventListener('keydown', function onEsc(e) {
+            if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
+        });
+
+        document.getElementById('unicode-pw-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            var f = e.target;
+            var msg = document.getElementById('unicode-pw-msg');
+            msg.style.color = '#dc143c';
+
+            var oldp = f.old.value, newp = f.newp.value, cfm = f.confirm.value;
+            if (newp !== cfm) { msg.textContent = '两次输入的新密码不一致'; return; }
+            if (newp.length < 8 || newp.length > 64) { msg.textContent = '新密码长度需 8-64 位'; return; }
+            if (oldp === newp) { msg.textContent = '新密码不能和当前密码相同'; return; }
+
+            msg.style.color = '#bbb';
+            msg.textContent = '提交中…';
+
+            changePasswordRequest(oldp, newp).then(function (j) {
+                var res = (j && j.Result) || j || {};
+                if (res.success) {
+                    msg.style.color = '#43a047';
+                    msg.textContent = res.message || '密码已修改，2 秒后自动退出登录…';
+                    // 修改成功后强制重新登录（让新密码生效）
+                    setTimeout(function () {
+                        // SnappyMail 登出走 #/logout 或者直接清 cookie
+                        try { document.cookie.split(';').forEach(function (c) {
+                            document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
+                        }); } catch (e) {}
+                        location.href = '/';
+                    }, 2000);
+                } else {
+                    msg.style.color = '#dc143c';
+                    msg.textContent = res.error || '修改失败';
+                }
+            }).catch(function (e) {
+                msg.style.color = '#dc143c';
+                msg.textContent = '请求失败：' + (e && e.message || e);
+            });
+        });
+    }
+
+    function changePasswordRequest(oldp, newp) {
+        // SnappyMail 的 plugin addJsonHook 路由 URL 在不同版本里可能略不同，
+        // 试两种最常见的 pattern。一种成功就 return。
+        var paths = [
+            '/?/Json/&q[]=/0/0/UnicodeChangePassword/',
+            '/?/UnicodeChangePassword/0/' + Math.random().toString(36).slice(2) + '/'
+        ];
+        var body = new URLSearchParams({ OldPassword: oldp, NewPassword: newp });
+        var token = '';
+        try {
+            if (window.rl && window.rl.settings && typeof window.rl.settings.app === 'function') {
+                token = window.rl.settings.app('token') || '';
+            }
+        } catch (e) {}
+        var headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json',
+            'X-SM-Token': token
+        };
+
+        function tryNext(i) {
+            if (i >= paths.length) return Promise.reject(new Error('所有路径都失败'));
+            return fetch(paths[i], { method: 'POST', body: body, headers: headers, credentials: 'same-origin' })
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function (j) {
+                    // 如果 SnappyMail 不认这个 action 名，会返回 {Action: ..., ErrorCode: ...} 或类似
+                    if (j && j.Result && typeof j.Result === 'object') return j;
+                    if (j && j.error) throw new Error(j.error);
+                    if (j && j.ErrorCode) throw new Error('SnappyMail 返回 ErrorCode=' + j.ErrorCode);
+                    return j;
+                })
+                .catch(function (e) {
+                    if (i + 1 < paths.length) return tryNext(i + 1);
+                    throw e;
+                });
+        }
+        return tryNext(0);
     }
 
     // 监听 DOM 变化 —— SnappyMail 异步渲染设置/文件夹列表

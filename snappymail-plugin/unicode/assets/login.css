@@ -158,24 +158,10 @@ body.rl-login,
 
 /* ===== 用户进入 webmail 后 ===== */
 
-/* 隐藏 Settings → Themes 入口（用户层面禁主题切换）
- * 多种姿势齐上 —— SnappyMail 不同版本 class 名变化大，靠任一命中就够 */
-#rl-app a[href*="themes" i],
-#rl-app a[href*="settings/themes" i],
-#rl-app [data-route*="theme" i],
-#rl-app [data-name="Themes"],
-#rl-app .b-settings-menu li[data-name*="theme" i],
-#rl-app .b-settings-menu a[href*="theme" i],
-#rl-app nav a[href*="theme" i],
-#rl-app ul a[href*="theme" i] {
-    display: none !important;
-}
-
-/* 文件夹列表里 SnappyMail 的「不可见 / Invisible」假节点 ——
- * CSS 端先尝试用 class 命中，如果不准 JS 端会文本兜底再藏一次 */
-#rl-app .b-folder-list li[data-name="INBOX.invisible"],
-#rl-app .b-folder-list li[data-system="invisible"],
-#rl-app .b-folder-list .invisible-folder,
-#rl-app .b-folder-item[data-name*="invisible" i] {
+/* "不可见" 其实是 SnappyMail 文件夹列表里的「filter unseen」勾选框
+ * （SEARCH/UNSEEN 在中文 i18n 里被翻成"不可见"），普通用户看着困惑。
+ * 用 data-bind 精准匹配，比文本匹配可靠。 */
+#rl-app .b-folders [data-bind*="filterUnseen"],
+#rl-app .b-folders .e-checkbox[data-bind*="filterUnseen"] {
     display: none !important;
 }
