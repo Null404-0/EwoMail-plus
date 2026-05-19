@@ -265,6 +265,18 @@
                 container.style.display = 'none';
             });
         } catch (e) { /* ignore */ }
+
+        // 某些主题/版本会把“filterUnseen”渲染成左侧一个名为“不可见”的伪文件夹，
+        // 不是实际邮箱目录，容易让用户困惑。这里按名字精确隐藏该项。
+        try {
+            (root || document).querySelectorAll('a, span, div, li').forEach(function (el) {
+                if (!el || !el.textContent) return;
+                var txt = (el.textContent || '').trim();
+                if (txt !== '不可见') return;
+                var row = (el.closest && (el.closest('li') || el.closest('.b-folders-item') || el.closest('.e-item'))) || el;
+                row.style.display = 'none';
+            });
+        } catch (e) { /* ignore */ }
     }
 
     function sweep(root) {
@@ -280,8 +292,7 @@
     // 我们自己加一个：
     //   1. 在 Settings 侧栏的"安全"后面插一行"密码"
     //   2. 点击 → 弹自定义 modal → 填当前 / 新 / 确认
-    //   3. 提交到 UnicodeChangePassword JSON 端点（addJsonHook 注册的，PHP 端
-    //      自己接 EwoMail DB 改 i_users）
+    //   3. 提交到 /api-pw-change（PHP 端自己接 EwoMail DB 改 i_users）
     //
     // 用 Knockout-friendly 的 attribute hooks，避开和 SnappyMail 自己的 binding
     // 打架。SnappyMail 路由切换会重新渲染菜单，导致我们注入的链接消失 ——
@@ -297,7 +308,7 @@
                 // 已经注入过就跳
                 if (nav.querySelector('[data-unicode-pw]')) return;
                 // 至少要有几个原生菜单项再注入，防误注入到其他 nav
-                var existing = nav.querySelectorAll('a[data-i18n], a[href*="settings/"]');
+                var existing = nav.querySelectorAll('a[data-i18n], a[href*="settings/"], a[href*="#/settings"], nav a, .b-settings-menu a');
                 if (existing.length < 2) return;
 
                 var link = document.createElement('a');
@@ -323,7 +334,16 @@
                     var href = (a.getAttribute('href') || '').toLowerCase();
                     return /security/.test(i18n) || /security/.test(href);
                 });
-                if (security && security.nextSibling) {
+                var targetContainer = nav;
+                if (security && security.parentElement && /li/i.test(security.parentElement.tagName || '')) {
+                    var li = document.createElement('li');
+                    li.appendChild(link);
+                    targetContainer = li;
+                }
+
+                if (security && security.parentElement && /li/i.test(security.parentElement.tagName || '')) {
+                    security.parentElement.insertAdjacentElement('afterend', targetContainer);
+                } else if (security && security.nextSibling) {
                     nav.insertBefore(link, security.nextSibling);
                 } else {
                     nav.appendChild(link);
