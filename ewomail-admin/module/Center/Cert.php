@@ -120,7 +120,7 @@ Rout::get('backup', function () {
     $rc = Helper::stream(['cert-backup'], $err);
     if ($rc !== 0) {
         // Headers may already be sent; the precheck above should make this rare.
-        error_log('cert-backup failed: ' . $err);
+        error_log('cert-backup failed (rc=' . $rc . '): ' . $err);
     }
     exit;
 });
