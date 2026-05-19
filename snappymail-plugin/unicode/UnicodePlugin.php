@@ -30,9 +30,12 @@ class UnicodePlugin extends \RainLoop\Plugins\AbstractPlugin
     {
         // 同时加载 config.js（先）和 login.js（后）—— 顺序保证 login.js 读到
         // window.UNICODE_CFG。SnappyMail 按 add 顺序串到 <head>。
-        $this->addCss('assets/login.css');
-        $this->addJs('assets/config.js');
-        $this->addJs('assets/login.js');
+        // 带版本参数避免浏览器/反向代理缓存旧 JS，导致仍调用已废弃的
+        // UnicodeChangePassword action（表现为 UnknownError[999]）。
+        $v = self::RELEASE;
+        $this->addCss('assets/login.css?v=' . $v);
+        $this->addJs('assets/config.js?v=' . $v);
+        $this->addJs('assets/login.js?v=' . $v);
 
         // 登录前的人机验证拦截。SnappyMail 不同版本里 login 钩子名略有差异，
         // 同时挂多个常见 hook 名提高兼容性 —— 任何一个先触发都能拒绝登录。

@@ -265,6 +265,35 @@
                 container.style.display = 'none';
             });
         } catch (e) { /* ignore */ }
+
+        // 某些主题/版本会把“filterUnseen”渲染成左侧一个名为“不可见”的伪文件夹。
+        // 这里统一走“先 XPath、再文本扫描”的双路径，减少分支合并冲突。
+        try {
+            var hideRow = function (el) {
+                var row = (el.closest && (el.closest('li') || el.closest('[role="treeitem"]') || el.closest('.b-folders-item') || el.closest('.e-item'))) || el;
+                row.style.display = 'none';
+            };
+            var done = false;
+            // 优先 XPath：匹配“不可见”或“不可见 0”这类文本
+            if (document.evaluate) {
+                var doc = document;
+                var xp = ".//*[starts-with(normalize-space(text()),'不可见')]";
+                var rs = doc.evaluate(xp, (root && root.nodeType === 1) ? root : doc, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                for (var i = 0; i < rs.snapshotLength; i++) {
+                    hideRow(rs.snapshotItem(i));
+                    done = true;
+                }
+            }
+            // 回退：遍历常见元素按可见文本匹配（兼容不支持 XPath 或 DOM 结构差异）
+            if (!done) {
+                (root || document).querySelectorAll('a, span, div, li').forEach(function (el) {
+                    if (!el || !el.textContent) return;
+                    var txt = (el.textContent || '').trim();
+                    if (txt !== '不可见' && txt.indexOf('不可见') !== 0) return;
+                    hideRow(el);
+                });
+            }
+        } catch (e) { /* ignore */ }
     }
 
     function sweep(root) {
@@ -280,8 +309,7 @@
     // 我们自己加一个：
     //   1. 在 Settings 侧栏的"安全"后面插一行"密码"
     //   2. 点击 → 弹自定义 modal → 填当前 / 新 / 确认
-    //   3. 提交到 UnicodeChangePassword JSON 端点（addJsonHook 注册的，PHP 端
-    //      自己接 EwoMail DB 改 i_users）
+    //   3. 提交到 /api-pw-change（PHP 端自己接 EwoMail DB 改 i_users）
     //
     // 用 Knockout-friendly 的 attribute hooks，避开和 SnappyMail 自己的 binding
     // 打架。SnappyMail 路由切换会重新渲染菜单，导致我们注入的链接消失 ——
@@ -291,13 +319,17 @@
         try {
             // 只在 Settings 页面（路由 #/settings/...）注入
             if (!/\#\/settings/i.test(location.hash || '')) return;
+            var openPasswordModal = function (e) {
+                if (e) { e.preventDefault(); e.stopPropagation(); }
+                showPasswordModal();
+            };
             // 找设置侧栏的 nav
             var navs = (root || document).querySelectorAll('nav, .b-settings-menu nav, [data-bind*="foreach: menu"]');
             navs.forEach(function (nav) {
                 // 已经注入过就跳
                 if (nav.querySelector('[data-unicode-pw]')) return;
                 // 至少要有几个原生菜单项再注入，防误注入到其他 nav
-                var existing = nav.querySelectorAll('a[data-i18n], a[href*="settings/"]');
+                var existing = nav.querySelectorAll('a[data-i18n], a[href*="settings/"], a[href*="#/settings"], nav a, .b-settings-menu a');
                 if (existing.length < 2) return;
 
                 var link = document.createElement('a');
@@ -309,26 +341,49 @@
                 var sibling = existing[0];
                 if (sibling && sibling.className) link.className = sibling.className;
                 link.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    e.stopPropagation();
                     // 取消别的 "selected" 状态，给自己加上
                     nav.querySelectorAll('a.selected').forEach(function (a) { a.classList.remove('selected'); });
                     link.classList.add('selected');
-                    showPasswordModal();
+                    openPasswordModal(e);
                 });
 
                 // 插在"安全"之后；找不到就在末尾
                 var security = Array.from(existing).find(function (a) {
                     var i18n = (a.getAttribute('data-i18n') || '').toLowerCase();
                     var href = (a.getAttribute('href') || '').toLowerCase();
-                    return /security/.test(i18n) || /security/.test(href);
+                    var txt  = (a.textContent || '').trim().toLowerCase();
+                    return /security/.test(i18n) || /security/.test(href) || /安全/.test(txt) || /security/.test(txt);
                 });
-                if (security && security.nextSibling) {
+                var targetContainer = nav;
+                if (security && security.parentElement && /li/i.test(security.parentElement.tagName || '')) {
+                    var li = document.createElement('li');
+                    li.appendChild(link);
+                    targetContainer = li;
+                }
+
+                if (security && security.parentElement && /li/i.test(security.parentElement.tagName || '')) {
+                    security.parentElement.insertAdjacentElement('afterend', targetContainer);
+                } else if (security && security.nextSibling) {
                     nav.insertBefore(link, security.nextSibling);
                 } else {
                     nav.appendChild(link);
                 }
             });
+
+            // 兜底入口：如果侧栏结构变化导致插不进去，在设置主面板放一个明显按钮
+            if (!document.querySelector('[data-unicode-pw-fallback]')) {
+                var panels = document.querySelectorAll('.b-settings-content, .b-content, .content, main');
+                var panel = panels && panels[0];
+                if (panel) {
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.setAttribute('data-unicode-pw-fallback', '1');
+                    btn.textContent = '修改密码';
+                    btn.style.cssText = 'margin:8px 0 12px;padding:8px 14px;background:#dc143c;color:#fff;border:0;border-radius:4px;cursor:pointer;';
+                    btn.addEventListener('click', openPasswordModal);
+                    panel.insertBefore(btn, panel.firstChild);
+                }
+            }
         } catch (e) { /* ignore */ }
     }
 
