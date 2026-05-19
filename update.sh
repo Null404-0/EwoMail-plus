@@ -376,7 +376,16 @@ if [[ -d /ewomail/www/snappymail && -d "${REPO_DIR}/snappymail-plugin/unicode" ]
     /ewomail/sbin/ewomail-helper snappy-set-theme "Black Wood" \
         >>"${LOG_FILE}" 2>&1 || ui_warn "snappy-set-theme 失败（详见日志）"
 
-    ui_ok "UNICODE plugin 已同步"
+    # 强制刷新 SnappyMail 的 plugin asset 缓存 ——
+    # SnappyMail 把所有 enabled plugin 的 CSS/JS 合并打包成一个带 hash 的 URL
+    # 提供给浏览器。打包的 hash 基于源文件 mtime，git checkout 出来的文件
+    # mtime 是 clone 当时的，cp -a 又保留 mtime，所以 update 完 plugin 文件
+    # mtime 可能比 SnappyMail 缓存目录里那份还旧 → SnappyMail 以为没变化 →
+    # 继续给浏览器发旧 bundle。touch 一下强制比缓存新。
+    find "${plugin_dst}" -exec touch {} + 2>/dev/null || true
+    rm -rf /ewomail/www/snappymail/data/_data_/_default_/cache 2>/dev/null || true
+
+    ui_ok "UNICODE plugin 已同步（缓存已刷新）"
 fi
 
 # ---- 8. 总结 -------------------------------------------------------------

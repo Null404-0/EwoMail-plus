@@ -161,5 +161,11 @@ install_unicode_plugin() {
             >>"${LOG_FILE}" 2>&1 || ui_warn "snappy-set-theme 失败（详见日志）"
     fi
 
+    # 刷新 plugin 文件 mtime + 清掉 SnappyMail 自己的 plugin bundle 缓存。
+    # SnappyMail 把所有 plugin CSS/JS 合并成一个带 hash 的 URL，hash 基于
+    # 源文件 mtime；不刷新 mtime 浏览器会拿到陈旧 bundle。
+    find "${dst}" -exec touch {} + 2>/dev/null || true
+    rm -rf /ewomail/www/snappymail/data/_data_/_default_/cache 2>/dev/null || true
+
     ui_ok "UNICODE plugin 已部署到 SnappyMail（默认 Turnstile 关闭，可在面板里启用）"
 }
