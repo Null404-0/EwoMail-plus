@@ -153,47 +153,72 @@ class UnicodePlugin extends \RainLoop\Plugins\AbstractPlugin
      */
     public function doChangePassword()
     {
+        // 把每一步都 error_log 出去 —— 用户给的截图显示 SnappyMail 返回
+        // code:999 UnknownError，说明我们这函数被调到了但抛了异常或返回
+        // 不被认可。每步打 log 找断点。
+        error_log('[UNICODE] pwchange: ENTRY');
+
         try {
             $oActions = \RainLoop\Api::Actions();
+            error_log('[UNICODE] pwchange: Api::Actions() = ' .
+                (is_object($oActions) ? get_class($oActions) : gettype($oActions)));
+
+            // 各版本拿当前账户的方法名不同，挨个试 —— 把每次尝试都 log 出来
             $oAccount = null;
-            // SnappyMail 不同版本拿当前账户的方法名不同，挨个试
+            $methodsTried = [];
             foreach (['getAccountFromToken', 'getMainAccountFromToken', 'GetAccount'] as $m) {
-                if (method_exists($oActions, $m)) {
-                    try { $oAccount = $oActions->$m(); } catch (\Throwable $e) { /* try next */ }
-                    if ($oAccount) break;
+                if (is_object($oActions) && method_exists($oActions, $m)) {
+                    $methodsTried[] = $m . '(exists)';
+                    try {
+                        $oAccount = $oActions->$m();
+                        $methodsTried[] = $m . '(returned ' .
+                            (is_object($oAccount) ? get_class($oAccount) : gettype($oAccount)) . ')';
+                        if ($oAccount) break;
+                    } catch (\Throwable $e) {
+                        $methodsTried[] = $m . '(threw: ' . $e->getMessage() . ')';
+                    }
+                } else {
+                    $methodsTried[] = $m . '(missing)';
                 }
             }
+            error_log('[UNICODE] pwchange: account methods tried: ' . implode(' | ', $methodsTried));
+
             if (!$oAccount) {
-                return ['Result' => ['success' => false, 'error' => '未登录或会话已过期，请重新登录']];
+                return ['success' => false, 'error' => '未登录或会话已过期'];
             }
             $email = method_exists($oAccount, 'Email') ? (string)$oAccount->Email() : '';
+            error_log('[UNICODE] pwchange: email = ' . $email);
             if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                return ['Result' => ['success' => false, 'error' => '无法获取当前用户邮箱']];
+                return ['success' => false, 'error' => '无法获取当前用户邮箱（拿到 "' . $email . '"）'];
             }
 
             $oldPwd = isset($_POST['OldPassword']) ? (string)$_POST['OldPassword'] : '';
             $newPwd = isset($_POST['NewPassword']) ? (string)$_POST['NewPassword'] : '';
+            error_log('[UNICODE] pwchange: oldPwd len=' . strlen($oldPwd) . ', newPwd len=' . strlen($newPwd));
 
             if (strlen($newPwd) < 8 || strlen($newPwd) > 64) {
-                return ['Result' => ['success' => false, 'error' => '新密码长度需 8-64 位']];
+                return ['success' => false, 'error' => '新密码长度需 8-64 位'];
             }
             if ($oldPwd === '') {
-                return ['Result' => ['success' => false, 'error' => '当前密码不能为空']];
+                return ['success' => false, 'error' => '当前密码不能为空'];
             }
             if ($oldPwd === $newPwd) {
-                return ['Result' => ['success' => false, 'error' => '新密码不能和当前密码相同']];
+                return ['success' => false, 'error' => '新密码不能和当前密码相同'];
             }
 
-            // 读 EwoMail 的 DB 配置 —— PHP-FPM 的 open_basedir 允许 /ewomail/www/
             $cfgFile = '/ewomail/www/ewomail-admin/core/config.php';
+            error_log('[UNICODE] pwchange: reading config from ' . $cfgFile);
             if (!is_readable($cfgFile)) {
-                return ['Result' => ['success' => false, 'error' => '服务器配置不可读']];
+                return ['success' => false, 'error' => '服务器配置不可读 (' . $cfgFile . ')'];
             }
             $cfg = @include $cfgFile;
+            error_log('[UNICODE] pwchange: config loaded; type=' . gettype($cfg) .
+                ', has dbhost=' . (is_array($cfg) && !empty($cfg['dbhost']) ? 'yes' : 'no'));
             if (!is_array($cfg) || empty($cfg['dbhost']) || empty($cfg['dbname'])) {
-                return ['Result' => ['success' => false, 'error' => '服务器 DB 配置异常']];
+                return ['success' => false, 'error' => '服务器 DB 配置异常'];
             }
 
+            error_log('[UNICODE] pwchange: connecting to mysql ' . $cfg['dbhost'] . '/' . $cfg['dbname']);
             $pdo = new \PDO(
                 "mysql:host={$cfg['dbhost']};dbname={$cfg['dbname']};charset=utf8mb4",
                 (string)$cfg['dbuser'],
@@ -203,45 +228,41 @@ class UnicodePlugin extends \RainLoop\Plugins\AbstractPlugin
                     \PDO::ATTR_EMULATE_PREPARES => false,
                 ]
             );
+            error_log('[UNICODE] pwchange: connected');
 
-            // 先确认账户在 i_users 里存在 —— 区分"账户不存在"和"密码错误"两种
-            // 不同的失败，避免一律提示"密码错误"误导用户排错
             $stmt = $pdo->prepare("SELECT id, password FROM i_users WHERE email = ? LIMIT 1");
             $stmt->execute([$email]);
             $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            error_log('[UNICODE] pwchange: lookup ' . $email . ' → ' . ($row ? 'found id=' . $row['id'] : 'NOT FOUND'));
             if (!$row) {
-                error_log('UNICODE pwchange: account not in i_users: ' . $email);
-                return ['Result' => ['success' => false,
-                    'error' => '账户 ' . $email . ' 不在 EwoMail 用户表里（可能是 webmail 自己的 admin 账号，不是邮箱用户）']];
+                return ['success' => false,
+                    'error' => '账户 ' . $email . ' 不在 EwoMail 用户表里（可能是 SnappyMail 内部 admin 账号）'];
             }
 
-            // EwoMail 历史上密码就是 md5($password) 存的，没 salt。直接对比。
-            // 同时也兼容理论上的 sha256/bcrypt 升级 —— 但先验 MD5 这条路径。
             $expectedMd5 = md5($oldPwd);
             if (strtolower((string)$row['password']) !== strtolower($expectedMd5)) {
-                error_log(sprintf(
-                    'UNICODE pwchange: password mismatch for %s (stored len=%d, expected MD5 len=%d)',
-                    $email, strlen((string)$row['password']), strlen($expectedMd5)
-                ));
-                return ['Result' => ['success' => false,
-                    'error' => '当前密码不正确（账户 ' . $email . '）']];
+                error_log('[UNICODE] pwchange: password mismatch (stored len=' .
+                    strlen((string)$row['password']) . ')');
+                return ['success' => false, 'error' => '当前密码不正确'];
             }
 
-            // 更新
             $stmt = $pdo->prepare("UPDATE i_users SET password = MD5(?) WHERE email = ?");
             $stmt->execute([$newPwd, $email]);
-            if ($stmt->rowCount() < 1) {
-                return ['Result' => ['success' => false,
-                    'error' => '密码更新失败（rowCount=0），可能账户已被另一处会话修改']];
+            $rc = $stmt->rowCount();
+            error_log('[UNICODE] pwchange: update rowCount=' . $rc);
+            if ($rc < 1) {
+                return ['success' => false, 'error' => '密码更新失败（rowCount=0）'];
             }
 
-            return ['Result' => ['success' => true, 'message' => '密码已修改，下次登录请使用新密码']];
+            error_log('[UNICODE] pwchange: SUCCESS');
+            return ['success' => true, 'message' => '密码已修改，下次登录请使用新密码'];
         } catch (\PDOException $e) {
-            error_log('UNICODE pwchange PDO error: ' . $e->getMessage());
-            return ['Result' => ['success' => false, 'error' => '数据库错误：' . $e->getMessage()]];
+            error_log('[UNICODE] pwchange PDO: ' . $e->getMessage());
+            return ['success' => false, 'error' => '数据库错误：' . $e->getMessage()];
         } catch (\Throwable $e) {
-            error_log('UNICODE pwchange error: ' . $e->getMessage());
-            return ['Result' => ['success' => false, 'error' => '服务器错误：' . $e->getMessage()]];
+            error_log('[UNICODE] pwchange THROWABLE: ' . get_class($e) . ': ' . $e->getMessage() .
+                ' at ' . $e->getFile() . ':' . $e->getLine());
+            return ['success' => false, 'error' => get_class($e) . ': ' . $e->getMessage()];
         }
     }
 }
