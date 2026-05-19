@@ -728,8 +728,13 @@ PHP_EOF
         chmod 0644 "${dir}/assets/config.js"   # JS 是 webroot 资源，必须 world-readable
         ;;
 
-    # 在 SnappyMail 的 application.ini 里把 plugin 加进 enable=
-    # 列表。文件可能不存在（首次装机 SnappyMail 还没生成）→ 新建。
+    # 在 SnappyMail 的 application.ini 里启用 plugin。
+    # SnappyMail 的 [plugins] 段有【两个】独立键：
+    #   enable        = On/Off    —— 是否启用 plugin 子系统的 master 开关
+    #   enabled_list  = "a,b,c"   —— 实际启用的 plugin 名列表（逗号分隔）
+    # 之前我误把 plugin 名追加到 enable 里搞出 enable="Off,unicode"
+    # 这种鬼东西，整个 plugin 系统直接被 SnappyMail 当关闭处理。
+    # 修复：强制 enable=On + 把 plugin 名加到 enabled_list。
     snappy-plugin-enable)
         [[ $# -eq 1 ]] || usage
         name="$1"
@@ -739,58 +744,72 @@ PHP_EOF
         install -d -m 0750 -o www-data -g www-data "$(dirname "${ini}")"
 
         if [[ ! -f "${ini}" ]]; then
-            # 写最小 application.ini：[plugins] + enable = "name"
+            # 文件不存在：写一份最小 ini（SnappyMail bootstrap 后会自己补全
+            # 其他段，但 [plugins] 段会被保留）
             cat > "${ini}" <<EOF
 [plugins]
-enable = "${name}"
+enable = On
+enabled_list = "${name}"
 EOF
             chown www-data:www-data "${ini}"
             chmod 0640 "${ini}"
             exit 0
         fi
 
-        # 已经启用 → no-op
-        if awk -v n="${name}" '
-            /^\[/ { in_p = ($0 == "[plugins]") ? 1 : 0; next }
-            in_p && /^[[:space:]]*enable[[:space:]]*=/ {
-                v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); gsub(/"/, "", v); gsub(/[[:space:]]/, "", v)
-                split(v, a, ",")
-                for (i in a) if (a[i] == n) { found = 1; exit }
-            }
-            END { exit found ? 0 : 1 }
-        ' "${ini}"; then
-            exit 0
-        fi
-
-        # 追加（保留其它 enable 项）。三种情况：
-        #   1) 没 [plugins] 段 → END 补完整段
-        #   2) 有 [plugins] 但没 enable= → 在段末加 enable= "name"
-        #   3) 有 enable= → 追加 ",name" 到现有 value
         tmp=$(mktemp); trap "rm -f '${tmp}'" EXIT
+        # 单遍 awk 同时维护两个键：
+        #   - enable 行：无脑覆盖成 On（修复历史 buggy 值）
+        #   - enabled_list 行：把 name 加进去（已在则不重复）
+        # 段头切换时若两键缺失则补齐；文件末尾的 [plugins] 段在 EOF 时补齐。
         awk -v n="${name}" '
-            BEGIN { in_p = 0; saw_section = 0; saw_enable = 0; printed = 0 }
+            BEGIN { in_p=0; saw_section=0; saw_enable=0; saw_list=0 }
             /^\[/ {
-                # 切到别的段：如果 [plugins] 里没看到 enable=，补一行
-                if (in_p && !saw_enable) {
-                    print "enable = \"" n "\""
-                    saw_enable = 1; printed = 1
+                # 切到下一段前，flush 段内缺失的键到段末
+                if (in_p) {
+                    if (!saw_enable) print "enable = On"
+                    if (!saw_list)   print "enabled_list = \"" n "\""
                 }
                 in_p = ($0 == "[plugins]") ? 1 : 0
-                if (in_p) saw_section = 1
-                print
-                next
+                if (in_p) { saw_section=1; saw_enable=0; saw_list=0 }
+                print; next
             }
             in_p && /^[[:space:]]*enable[[:space:]]*=/ {
-                v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); gsub(/"/, "", v)
-                if (length(v) == 0) v = n; else v = v "," n
-                print "enable = \"" v "\""
-                saw_enable = 1; printed = 1
-                next
+                # master 开关：强制 On。注意 SnappyMail 用裸 On/Off（不带引号）
+                print "enable = On"; saw_enable=1; next
+            }
+            in_p && /^[[:space:]]*enabled_list[[:space:]]*=/ {
+                # plugin 列表：保留已有项，追加 n（已在则原样）
+                v=$0; sub(/^[^=]*=[[:space:]]*/, "", v); gsub(/"/, "", v)
+                found=0
+                if (length(v) > 0) {
+                    nfld = split(v, a, ",")
+                    for (i=1; i<=nfld; i++) {
+                        gsub(/[[:space:]]/, "", a[i])
+                        if (a[i] == n) found=1
+                    }
+                }
+                if (found) {
+                    print
+                } else if (length(v) == 0) {
+                    print "enabled_list = \"" n "\""
+                } else {
+                    print "enabled_list = \"" v "," n "\""
+                }
+                saw_list=1; next
             }
             { print }
             END {
-                if (in_p && !saw_enable) { print "enable = \"" n "\""; printed = 1 }
-                if (!saw_section) { print "[plugins]"; print "enable = \"" n "\"" }
+                # 文件末尾仍在 [plugins] 段时，补齐缺失键
+                if (in_p) {
+                    if (!saw_enable) print "enable = On"
+                    if (!saw_list)   print "enabled_list = \"" n "\""
+                }
+                # 整个文件都没 [plugins] 段：补一段完整的
+                if (!saw_section) {
+                    print "[plugins]"
+                    print "enable = On"
+                    print "enabled_list = \"" n "\""
+                }
             }
         ' "${ini}" > "${tmp}"
 
