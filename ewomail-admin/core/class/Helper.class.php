@@ -48,7 +48,7 @@ class Helper
 
     /**
      * Stream helper stdout directly to the browser. Intended for downloads.
-     * Stderr is captured separately so binary stdout is never polluted.
+     * Stderr is captured and returned so binary stdout is never polluted.
      */
     public static function stream(array $args, &$err = '')
     {
@@ -66,54 +66,14 @@ class Helper
             $err = 'proc_open failed';
             return -1;
         }
-
         fclose($pipes[0]);
-        // Read stdout/stderr together. If stderr fills its pipe while PHP is
-        // waiting for stdout EOF, proc_close can deadlock; binary data still
-        // only goes to stdout so downloads remain clean.
-        stream_set_blocking($pipes[1], false);
-        stream_set_blocking($pipes[2], false);
-        $stdoutOpen = true;
-        $stderrOpen = true;
-        $err = '';
-
-        while ($stdoutOpen || $stderrOpen) {
-            $read = [];
-            if ($stdoutOpen) $read[] = $pipes[1];
-            if ($stderrOpen) $read[] = $pipes[2];
-            $write = null;
-            $except = null;
-            $ready = @stream_select($read, $write, $except, 1);
-            if ($ready === false) {
-                break;
-            }
-            if ($ready === 0) {
-                continue;
-            }
-            foreach ($read as $pipe) {
-                $chunk = fread($pipe, 8192);
-                if ($chunk !== false && $chunk !== '') {
-                    if ($pipe === $pipes[1]) {
-                        echo $chunk;
-                        if (function_exists('flush')) flush();
-                    } else {
-                        $err .= $chunk;
-                    }
-                }
-                if (feof($pipe)) {
-                    if ($pipe === $pipes[1]) {
-                        fclose($pipes[1]);
-                        $stdoutOpen = false;
-                    } else {
-                        fclose($pipes[2]);
-                        $stderrOpen = false;
-                    }
-                }
-            }
+        while (!feof($pipes[1])) {
+            echo fread($pipes[1], 8192);
+            if (function_exists('flush')) flush();
         }
-
-        if ($stdoutOpen) fclose($pipes[1]);
-        if ($stderrOpen) fclose($pipes[2]);
+        fclose($pipes[1]);
+        $err = stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
         return proc_close($proc);
     }
 
