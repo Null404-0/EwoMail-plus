@@ -114,21 +114,24 @@ reload_mail_tls_services() {
 }
 
 cert_key_matches() {
-    local cert="$1" key="$2" tmpdir cert_pub key_pub rc
+    # 比对证书和私钥的公钥是否一致——不一致意味着 nginx 拿到的 fullchain
+    # 和 privkey 不是一对，重启时 SSL_CTX_check_private_key 会失败、整站
+    # HTTPS 立刻挂。这是 cert-restore 路径上最关键的一道防御。
+    #
+    # 这里没用 `trap '...' RETURN` 的原因：bash 的 RETURN trap 是 shell-
+    # global，函数返回后陷阱并不会清除，对调用方造成隐含污染。改成「先做
+    # 完比较记下 rc，再无条件 rm tmpdir」清晰且无副作用。
+    local cert="$1" key="$2" tmpdir rc=0
     tmpdir=$(mktemp -d) || return 1
-    cert_pub="${tmpdir}/cert.pub"
-    key_pub="${tmpdir}/key.pub"
-
-    if openssl x509 -in "${cert}" -pubkey -noout >"${cert_pub}" 2>/dev/null &&
-       openssl pkey -in "${key}" -pubout >"${key_pub}" 2>/dev/null &&
-       cmp -s "${cert_pub}" "${key_pub}"; then
+    if openssl x509 -in "${cert}" -pubkey -noout > "${tmpdir}/cert.pub" 2>/dev/null \
+       && openssl pkey -in "${key}" -pubout > "${tmpdir}/key.pub" 2>/dev/null \
+       && cmp -s "${tmpdir}/cert.pub" "${tmpdir}/key.pub"; then
         rc=0
     else
-        rc=$?
+        rc=1
     fi
-
     rm -rf "${tmpdir}"
-    return "${rc}"
+    return $rc
 }
 
 valid_service() {

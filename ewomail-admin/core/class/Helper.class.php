@@ -68,6 +68,9 @@ class Helper
         }
 
         fclose($pipes[0]);
+        // Read stdout/stderr together. If stderr fills its pipe while PHP is
+        // waiting for stdout EOF, proc_close can deadlock; binary data still
+        // only goes to stdout so downloads remain clean.
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
         $stdoutOpen = true;
