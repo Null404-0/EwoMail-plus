@@ -338,8 +338,19 @@ fi
 if [[ -d /ewomail/www/snappymail && -d "${REPO_DIR}/snappymail-plugin/unicode" ]]; then
     step "同步 UNICODE plugin 到 SnappyMail"
     plugin_dst=/ewomail/www/snappymail/data/_data_/_default_/plugins/unicode
-    install -d -m 0750 -o www-data -g www-data \
-        /ewomail/www/snappymail/data/_data_/_default_/plugins
+    # GNU `install -d -o … -g …` 只把 owner/group 应用到 leaf —— 中间目录会被
+    # 创建成 root:root 0755。这样 PHP-FPM(www-data) 后续要在 _default_/ 里
+    # mkdir cache/ 就 Permission denied，SnappyMail bootstrap 直接抛
+    # RuntimeException → 登录页空 body 200。每一层显式 chown 一遍。
+    for d in \
+        /ewomail/www/snappymail/data \
+        /ewomail/www/snappymail/data/_data_ \
+        /ewomail/www/snappymail/data/_data_/_default_ \
+        /ewomail/www/snappymail/data/_data_/_default_/plugins; do
+        install -d "$d"
+        chown www-data:www-data "$d"
+        chmod 0750 "$d"
+    done
     rm -rf "${plugin_dst}"
     cp -a "${REPO_DIR}/snappymail-plugin/unicode" "${plugin_dst}"
     chown -R root:www-data "${plugin_dst}"
