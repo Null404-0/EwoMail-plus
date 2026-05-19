@@ -149,8 +149,21 @@ prompt_db_admin_enabled() {
 }
 
 prompt_request_letsencrypt() {
-    prompt_yesno "安装结束时是否申请 Let's Encrypt 证书？（DNS 需先指过来）" "yes" EWO_LE_REQUEST
+    # 装机阶段不再交互问"要不要立刻签 LE 证书"。理由：
+    #   1. 反复重装测试时容易撞 LE "5 张完全相同 FQDN 集合 / 周" 限流
+    #      —— 撞了之后一周内同一个 mail.<domain> 都没法签新证书
+    #   2. 自签证书已经够让 nginx / postfix / dovecot 起来跑通整条链路
+    #   3. 面板里"服务器 → SSL证书"已经有一键申请 LE 的入口，用户进去
+    #      点"申请"即可（DNS 没就绪时点了会失败，不会消耗限流）
+    #
+    # 高级 / 自动化场景可以 EWO_LE_REQUEST=yes ./install.sh 强制开启。
+    EWO_LE_REQUEST="${EWO_LE_REQUEST:-no}"
     export EWO_LE_REQUEST
+    if [[ "${EWO_LE_REQUEST}" == "yes" ]]; then
+        ui_info "EWO_LE_REQUEST=yes：安装末尾会尝试通过 acme.sh 申请 Let's Encrypt 证书"
+    else
+        ui_info "证书策略：装完先用自签占位，进面板「服务器 → SSL证书」可一键申请 LE"
+    fi
 }
 
 precheck_dns() {

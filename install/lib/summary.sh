@@ -92,5 +92,13 @@ ${UI_BOLD}反向解析（重要）${UI_RESET}：${UI_YELLOW}请在你的 VPS 厂
 （不设置 PTR，Gmail / Outlook 大概率拒收你发出的邮件）
 
 ${UI_DIM}发布后可执行  ${UI_BOLD}dig +short TXT dkim._domainkey.${EWO_DOMAIN}${UI_RESET}${UI_DIM}  验证。${UI_RESET}
+
+${UI_BOLD}${UI_YELLOW}SSL 证书${UI_RESET}：当前是 ${UI_BOLD}自签证书${UI_RESET}（浏览器会标红 / 邮件客户端会警告）。
+等 DNS A 记录生效后，登入管理后台：
+  ${UI_CYAN}https://${EWO_MAIL_HOST}/${EWO_ADMIN_PATH}/${UI_RESET}
+进入 ${UI_BOLD}「服务器」→「SSL证书」${UI_RESET}，点 ${UI_BOLD}「申请」${UI_RESET}（域名已经预填）即可
+一键签发 Let's Encrypt 证书并部署到 Nginx / Postfix / Dovecot。
+${UI_DIM}（之所以不在装机时直接申请：反复重装容易撞 LE 限流；进面板后
+DNS 一旦就绪点一下就签好，没就绪点了也不消耗配额。）${UI_RESET}
 EOF
 }

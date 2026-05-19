@@ -61,7 +61,8 @@ setup_ssl() {
     ui_ok "acme.sh 已安装于 /root/.acme.sh（cron 自动续签）"
 
     if [[ "${EWO_LE_REQUEST}" != "yes" ]]; then
-        ui_info "已跳过 Let's Encrypt 签发，回落到自签证书。"
+        ui_info "已跳过 Let's Encrypt 签发，当前使用自签证书。"
+        ui_info "DNS 生效后进面板「服务器 → SSL证书」点「申请」一键签发。"
         return 0
     fi
 
