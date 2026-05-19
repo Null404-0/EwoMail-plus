@@ -332,7 +332,50 @@ else
     ui_ok "服务已 reload"
 fi
 
-# ---- 7. 总结 -------------------------------------------------------------
+# ---- 7. SnappyMail UNICODE plugin sync ----------------------------------
+# 把 repo 里的 plugin 推到 SnappyMail data 目录，重新启用，并刷一遍配置
+# （保留 DB 里已存的 turnstile/outbound 值）。SnappyMail 没装时跳过。
+if [[ -d /ewomail/www/snappymail && -d "${REPO_DIR}/snappymail-plugin/unicode" ]]; then
+    step "同步 UNICODE plugin 到 SnappyMail"
+    plugin_dst=/ewomail/www/snappymail/data/_data_/_default_/plugins/unicode
+    install -d -m 0750 -o www-data -g www-data \
+        /ewomail/www/snappymail/data/_data_/_default_/plugins
+    rm -rf "${plugin_dst}"
+    cp -a "${REPO_DIR}/snappymail-plugin/unicode" "${plugin_dst}"
+    chown -R root:www-data "${plugin_dst}"
+    find "${plugin_dst}" -type d -exec chmod 0750 {} +
+    find "${plugin_dst}" -type f -exec chmod 0640 {} +
+    if [[ -d "${plugin_dst}/assets" ]]; then
+        chmod 0755 "${plugin_dst}/assets"
+        find "${plugin_dst}/assets" -type f -exec chmod 0644 {} +
+    fi
+
+    /ewomail/sbin/ewomail-helper snappy-plugin-enable unicode \
+        >>"${LOG_FILE}" 2>&1 || ui_warn "snappy-plugin-enable 失败（详见日志）"
+
+    # 从 DB 读现有 turnstile 配置，重新推到 plugin（覆盖 cp 进来的占位 config.json）
+    cur_enabled=$(mysql -uroot -N -B ewomail -e "SELECT value FROM i_panel_setting WHERE name='turnstile_enabled'" 2>/dev/null || echo "no")
+    cur_site=$(mysql -uroot -N -B ewomail -e "SELECT value FROM i_panel_setting WHERE name='turnstile_site_key'" 2>/dev/null || echo "")
+    cur_secret=$(mysql -uroot -N -B ewomail -e "SELECT value FROM i_panel_setting WHERE name='turnstile_secret_key'" 2>/dev/null || echo "")
+    cur_outbound=$(mysql -uroot -N -B ewomail -e "SELECT value FROM i_panel_setting WHERE name='outbound_disabled'" 2>/dev/null || echo "no")
+
+    # 用 PHP 拼合法 JSON 防字段里有特殊字符
+    payload=$(php -r '
+        echo json_encode([
+            "turnstile_enabled"    => getenv("E") ?: "no",
+            "turnstile_site_key"   => getenv("S") ?: "",
+            "turnstile_secret_key" => getenv("K") ?: "",
+            "outbound_disabled"    => getenv("O") ?: "no",
+        ], JSON_UNESCAPED_UNICODE);
+    ' E="${cur_enabled:-no}" S="${cur_site}" K="${cur_secret}" O="${cur_outbound:-no}")
+
+    printf '%s' "${payload}" | /ewomail/sbin/ewomail-helper snappy-plugin-config-write unicode \
+        >>"${LOG_FILE}" 2>&1 || ui_warn "snappy-plugin-config-write 失败（详见日志）"
+
+    ui_ok "UNICODE plugin 已同步"
+fi
+
+# ---- 8. 总结 -------------------------------------------------------------
 echo
 ui_ok "更新完成。"
 ui_info "如发现问题，本次操作前的配置备份在 ${BACKUP_DIR}"

@@ -60,6 +60,11 @@ Setting:
   setting-rotate-admin-path
   setting-rotate-db-path
   setting-toggle-db <on|off>
+
+SnappyMail:
+  snappy-plugin-config-write <name>        write plugin config from stdin JSON
+                                           (creates config.json + assets/config.js)
+  snappy-plugin-enable <name>              add plugin to application.ini [plugins]
 EOF
     exit 2
 }
@@ -145,6 +150,32 @@ valid_service() {
     esac
 }
 
+# 从 DB 取当前所有 plugin 相关字段，重新推到 unicode plugin。
+# 任何环节失败都 return 0 —— 这是同步辅助操作，不应让主流程（outbound-disable
+# 等）失败。plugin 没装的话也直接 return 0。
+_sync_unicode_plugin_config() {
+    local dir=/ewomail/www/snappymail/data/_data_/_default_/plugins/unicode
+    [[ -d "${dir}" ]] || return 0
+
+    local e s k o payload
+    e=$(mysql -uroot -N -B ewomail -e "SELECT value FROM i_panel_setting WHERE name='turnstile_enabled'" 2>/dev/null) || e=no
+    s=$(mysql -uroot -N -B ewomail -e "SELECT value FROM i_panel_setting WHERE name='turnstile_site_key'" 2>/dev/null) || s=""
+    k=$(mysql -uroot -N -B ewomail -e "SELECT value FROM i_panel_setting WHERE name='turnstile_secret_key'" 2>/dev/null) || k=""
+    o=$(mysql -uroot -N -B ewomail -e "SELECT value FROM i_panel_setting WHERE name='outbound_disabled'" 2>/dev/null) || o=no
+
+    payload=$(E="${e:-no}" S="${s}" K="${k}" O="${o:-no}" \
+        php -r 'echo json_encode([
+            "turnstile_enabled"    => getenv("E") ?: "no",
+            "turnstile_site_key"   => getenv("S") ?: "",
+            "turnstile_secret_key" => getenv("K") ?: "",
+            "outbound_disabled"    => getenv("O") ?: "no",
+        ], JSON_UNESCAPED_UNICODE);')
+    [[ -n "${payload}" ]] || return 0
+
+    printf '%s' "${payload}" | "$0" snappy-plugin-config-write unicode 2>/dev/null || true
+    return 0
+}
+
 ZONE="ewomail"
 
 cmd="${1:-}"
@@ -212,6 +243,9 @@ case "${cmd}" in
         firewall-cmd --permanent --zone="${ZONE}" --remove-port=587/tcp 2>/dev/null || true
         firewall-cmd --reload
         mysql -uroot ewomail -e "REPLACE INTO i_panel_setting VALUES ('outbound_disabled','yes')"
+        # 同步给 SnappyMail unicode plugin —— 否则用户改完开关，webmail
+        # 登录页公告状态要等下次管理员去 Webmail 品牌页点保存才更新。
+        _sync_unicode_plugin_config || true
         ;;
     outbound-enable)
         "$0" fw-out-del 25/tcp >/dev/null
@@ -219,6 +253,7 @@ case "${cmd}" in
         firewall-cmd --permanent --zone="${ZONE}" --add-port=587/tcp 2>/dev/null || true
         firewall-cmd --reload
         mysql -uroot ewomail -e "REPLACE INTO i_panel_setting VALUES ('outbound_disabled','no')"
+        _sync_unicode_plugin_config || true
         ;;
     outbound-status)
         # 之前用 firewall-cmd --direct --query-rule 来判断，但 Debian 12+ 的
@@ -631,6 +666,135 @@ EOF
             sed -i '/alias \/ewomail\/www\/adminer\/;/a\        return 404; # EWOMAIL_DB_DISABLED' "${conf}"
         fi
         nginx -t >/dev/null && systemctl reload nginx
+        ;;
+
+    # ---- SnappyMail plugin ----
+    # 给 plugin 写配置：stdin JSON → config.json（PHP 读，含 secret_key）+
+    # assets/config.js（JS 读，只暴露 site_key + outbound 状态）。
+    # 用 PHP CLI 解析 JSON（系统一定装好的，避免依赖 jq/python3）。
+    snappy-plugin-config-write)
+        [[ $# -eq 1 ]] || usage
+        name="$1"
+        [[ "${name}" =~ ^[a-z0-9_-]+$ ]] || { echo "invalid plugin name: ${name}" >&2; exit 2; }
+
+        dir="/ewomail/www/snappymail/data/_data_/_default_/plugins/${name}"
+        if [[ ! -d "${dir}" ]]; then
+            echo "plugin dir not found: ${dir}" >&2
+            exit 1
+        fi
+        install -d -m 0750 -o root -g www-data "${dir}/assets"
+
+        # 收集 stdin，限制大小不要被恶意撑爆
+        tmp=$(mktemp); trap "rm -f '${tmp}'" EXIT
+        head -c 8192 > "${tmp}"
+        [[ -s "${tmp}" ]] || { echo "empty stdin" >&2; exit 1; }
+
+        # 用 PHP 校验 JSON 合法 + 字段白名单 + 生成 config.js。
+        # 路径通过环境变量传，比 stdin-mode 下 $argv 行为可靠。
+        UNICODE_CFG_SRC="${tmp}" UNICODE_CFG_DIR="${dir}" php -d open_basedir= <<'PHP_EOF'
+<?php
+$src = getenv('UNICODE_CFG_SRC');
+$dir = getenv('UNICODE_CFG_DIR');
+$raw = file_get_contents($src);
+$j   = json_decode($raw, true);
+if (!is_array($j)) { fwrite(STDERR, "invalid JSON\n"); exit(2); }
+
+// 只接受这些已知字段，其他丢弃 —— 防 PHP 端被绕过时往 plugin 里塞乱七八糟。
+$allow = ['turnstile_enabled', 'turnstile_site_key', 'turnstile_secret_key', 'outbound_disabled'];
+$cfg = [];
+foreach ($allow as $k) {
+    $v = isset($j[$k]) ? $j[$k] : '';
+    if (!is_string($v) && !is_int($v) && !is_bool($v)) { $v = ''; }
+    $cfg[$k] = (string)$v;
+}
+
+// 1) config.json（PHP 端读，含 secret_key）
+$jsonPath = $dir . '/config.json';
+file_put_contents($jsonPath, json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+
+// 2) assets/config.js（JS 端读，只暴露公开字段）
+$pub = [
+    'turnstile_enabled'  => $cfg['turnstile_enabled']  ?: 'no',
+    'turnstile_site_key' => $cfg['turnstile_site_key'] ?: '',
+    'outbound_disabled'  => $cfg['outbound_disabled']  ?: 'no',
+];
+$js = "window.UNICODE_CFG = " . json_encode($pub, JSON_UNESCAPED_UNICODE) . ";\n";
+file_put_contents($dir . '/assets/config.js', $js);
+PHP_EOF
+
+        # 权限：config.json 含 secret_key 只让 root 写 + www-data 读
+        chown root:www-data "${dir}/config.json" "${dir}/assets/config.js"
+        chmod 0640 "${dir}/config.json"
+        chmod 0644 "${dir}/assets/config.js"   # JS 是 webroot 资源，必须 world-readable
+        ;;
+
+    # 在 SnappyMail 的 application.ini 里把 plugin 加进 enable=
+    # 列表。文件可能不存在（首次装机 SnappyMail 还没生成）→ 新建。
+    snappy-plugin-enable)
+        [[ $# -eq 1 ]] || usage
+        name="$1"
+        [[ "${name}" =~ ^[a-z0-9_-]+$ ]] || { echo "invalid plugin name" >&2; exit 2; }
+
+        ini="/ewomail/www/snappymail/data/_data_/_default_/configs/application.ini"
+        install -d -m 0750 -o www-data -g www-data "$(dirname "${ini}")"
+
+        if [[ ! -f "${ini}" ]]; then
+            # 写最小 application.ini：[plugins] + enable = "name"
+            cat > "${ini}" <<EOF
+[plugins]
+enable = "${name}"
+EOF
+            chown www-data:www-data "${ini}"
+            chmod 0640 "${ini}"
+            exit 0
+        fi
+
+        # 已经启用 → no-op
+        if awk -v n="${name}" '
+            /^\[/ { in_p = ($0 == "[plugins]") ? 1 : 0; next }
+            in_p && /^[[:space:]]*enable[[:space:]]*=/ {
+                v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); gsub(/"/, "", v); gsub(/[[:space:]]/, "", v)
+                split(v, a, ",")
+                for (i in a) if (a[i] == n) { found = 1; exit }
+            }
+            END { exit found ? 0 : 1 }
+        ' "${ini}"; then
+            exit 0
+        fi
+
+        # 追加（保留其它 enable 项）。三种情况：
+        #   1) 没 [plugins] 段 → END 补完整段
+        #   2) 有 [plugins] 但没 enable= → 在段末加 enable= "name"
+        #   3) 有 enable= → 追加 ",name" 到现有 value
+        tmp=$(mktemp); trap "rm -f '${tmp}'" EXIT
+        awk -v n="${name}" '
+            BEGIN { in_p = 0; saw_section = 0; saw_enable = 0; printed = 0 }
+            /^\[/ {
+                # 切到别的段：如果 [plugins] 里没看到 enable=，补一行
+                if (in_p && !saw_enable) {
+                    print "enable = \"" n "\""
+                    saw_enable = 1; printed = 1
+                }
+                in_p = ($0 == "[plugins]") ? 1 : 0
+                if (in_p) saw_section = 1
+                print
+                next
+            }
+            in_p && /^[[:space:]]*enable[[:space:]]*=/ {
+                v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); gsub(/"/, "", v)
+                if (length(v) == 0) v = n; else v = v "," n
+                print "enable = \"" v "\""
+                saw_enable = 1; printed = 1
+                next
+            }
+            { print }
+            END {
+                if (in_p && !saw_enable) { print "enable = \"" n "\""; printed = 1 }
+                if (!saw_section) { print "[plugins]"; print "enable = \"" n "\"" }
+            }
+        ' "${ini}" > "${tmp}"
+
+        install -m 0640 -o www-data -g www-data "${tmp}" "${ini}"
         ;;
 
     *) usage ;;

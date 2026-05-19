@@ -1,0 +1,24 @@
+<!--
+  UNICODE 占位 logo（独角兽剪影 + UNICODE 字样）。
+  TODO: 用户提供 PNG 后替换。
+  红黑配色：#dc143c 主红，#1a1a1a 主黑。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100" width="300" height="100">
+    <defs>
+        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#dc143c"/>
+            <stop offset="100%" stop-color="#8b0000"/>
+        </linearGradient>
+    </defs>
+    <rect width="300" height="100" fill="#0e0a0c"/>
+    <!-- 独角兽侧脸简化形 -->
+    <g transform="translate(20,12) scale(0.78)">
+        <path d="M40 20 L46 6 L52 20 Z" fill="url(#grad)" stroke="#dc143c" stroke-width="0.6"/>
+        <path d="M30 38 Q24 28 30 22 Q42 12 56 18 Q72 22 78 38 L78 76 L66 80 L60 64 L50 76 L40 80 L40 60 Q34 56 30 50 Z" fill="url(#grad)"/>
+        <circle cx="62" cy="40" r="2.2" fill="#fff"/>
+    </g>
+    <!-- UNICODE 字样 -->
+    <text x="115" y="62" font-family="Arial Black, sans-serif" font-size="34" font-weight="900"
+          fill="url(#grad)" letter-spacing="6">UNICODE</text>
+    <text x="115" y="80" font-family="Arial, sans-serif" font-size="9" fill="#888" letter-spacing="3">SECURE · FAST · LIMITLESS</text>
+</svg>

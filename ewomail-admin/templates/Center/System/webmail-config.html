@@ -38,6 +38,59 @@
                     </div>
                 </div>
 
+                <div class="form-group" style="border-top:1px dashed #ddd;padding-top:14px;margin-top:8px">
+                    <div class="label">
+                        <label style="font-weight:bold;color:#dc143c">Cloudflare Turnstile 人机验证</label>
+                    </div>
+                    <div class="field" style="color:#666;font-size:12px;line-height:1.6">
+                        <p style="margin:0 0 8px">登录前的人机验证（开启后，未通过验证不允许登录 webmail）。
+                            <a href="javascript:;" id="turnstile-help" style="color:#dc143c">如何获取 Key？</a>
+                        </p>
+                        <div id="turnstile-help-box" style="display:none;background:#fafafa;border:1px solid #eee;padding:10px;margin:0 0 10px;border-radius:3px">
+                            <ol style="margin:0 0 0 18px;padding:0">
+                                <li>访问 <a href="https://dash.cloudflare.com/" target="_blank">dash.cloudflare.com</a>（域名不必托管在 CF）</li>
+                                <li>左侧菜单 → <strong>Turnstile</strong> → <strong>Add Site</strong></li>
+                                <li>Domain 填你的邮件主机名 <code>{$snappy.mail_host|default:'mail.your-domain.com'}</code>（必须匹配实际访问域名）</li>
+                                <li>Widget Mode 选 <strong>Managed</strong></li>
+                                <li>拿到 Site Key（公开）和 Secret Key（私密）→ 粘到下面</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="label"><label>启用 Turnstile</label></div>
+                    <div class="field">
+                        <div class="button-group button-group-small radio">
+                            <label class="button {if $turnstile.enabled neq 'yes'}active{/if}">
+                                <input type="radio" name="turnstile_enabled" value="no" {if $turnstile.enabled neq 'yes'}checked{/if}>
+                                <span class="icon icon-check"></span>关闭
+                            </label>
+                            <label class="button {if $turnstile.enabled eq 'yes'}active{/if}">
+                                <input type="radio" name="turnstile_enabled" value="yes" {if $turnstile.enabled eq 'yes'}checked{/if}>
+                                <span class="icon icon-check"></span>开启
+                            </label>
+                        </div>
+                        <span class="msg-box" style="margin-left:10px"><em>关闭时下面两个 Key 不需要填</em></span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="label"><label>Site Key</label></div>
+                    <div class="field">
+                        <input type="text" class="input" name="turnstile_site_key" size="60" value="{$turnstile.site_key|escape}" placeholder="0x4AAA...（Cloudflare 提供）">
+                        <span class="msg-box"><em>公开值，会写到 webmail 登录页 HTML 里</em></span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="label"><label>Secret Key</label></div>
+                    <div class="field">
+                        <input type="text" class="input" name="turnstile_secret_key" size="60" value="{$turnstile.secret_key|escape}" placeholder="0x4AAA...（私密，仅服务端用）">
+                        <span class="msg-box"><em>仅服务端调 Cloudflare 验证用，不会出现在前端 HTML</em></span>
+                    </div>
+                </div>
+
                 <div class="form-button">
                     <button class="button bg-main" type="submit">保存设置</button>
                 </div>
@@ -48,10 +101,31 @@
     <div class="panel admin-panel" style="margin-top:14px">
         <div class="panel-head"><strong>说明</strong></div>
         <div class="padding" style="color:#666;line-height:1.7">
-            <p>这里改的设置会写入 SnappyMail 的 <code>application.ini</code>。保存后用户**刷新一次**邮箱页面就能看到新文案/图标，无需重启服务。</p>
-            <p>如果想恢复 SnappyMail 默认（标题 = "SnappyMail Webmail"、loading = "SnappyMail"、无 favicon），清空对应输入框 + 勾选「删除当前 favicon」即可。</p>
-            <p>SnappyMail 自带的管理后台地址：<code>https://&lt;你的邮件主机&gt;/?admin</code> 也能改这些设置，本面板只是把最常用的 3 项搬过来方便一站式编辑。</p>
+            <p>这里改的设置会写入 SnappyMail 的 <code>application.ini</code> 和 unicode plugin 的 <code>config.json</code>。
+                保存后用户**刷新一次**邮箱页面就能看到新文案/图标 / 人机验证，无需重启服务。</p>
+            <p>外发邮件状态：当前
+                {if $outbound_disabled eq 'yes'}
+                    <span style="color:#e53935;font-weight:bold">● 已关闭</span>
+                    —— 登录页会自动出现红色公告"本站现已关闭发信功能"
+                {else}
+                    <span style="color:#43a047;font-weight:bold">● 正常</span>
+                    —— 登录页无公告
+                {/if}
+                。开关在「服务器 → 防火墙」页。
+            </p>
+            <p>恢复 SnappyMail 默认（标题 = "SnappyMail Webmail"、loading = "SnappyMail"、无 favicon），清空对应输入框 + 勾选「删除当前 favicon」即可。</p>
+            <p>SnappyMail 自带的管理后台地址：<code>https://&lt;你的邮件主机&gt;/?admin</code> 也能改 application.ini，本页只是把日常会动的几项搬过来方便一站式编辑。</p>
         </div>
     </div>
 </div>
+
+<script>
+{literal}
+$(function () {
+    $('#turnstile-help').on('click', function () {
+        $('#turnstile-help-box').toggle();
+    });
+});
+{/literal}
+</script>
 {include file="$HOME/footer.html"}

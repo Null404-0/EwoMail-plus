@@ -137,8 +137,13 @@ class Helper
         return [
             'admin_path', 'db_path', 'db_admin_enable',
             'mail_host', 'public_ip', 'le_email',
-            'outbound_disabled',  // set by helper, may be read by panel
-            'fw_port_descs',      // JSON: per-port custom description overrides
+            'outbound_disabled',     // set by helper, may be read by panel
+            'fw_port_descs',         // JSON: per-port custom description overrides
+            // SnappyMail UNICODE plugin —— 同时存 DB 做 source-of-truth、面板里
+            // 展示用；plugin 实际读的是 helper 写到 plugin 目录里的 config.json。
+            'turnstile_enabled',     // 'yes' | 'no'
+            'turnstile_site_key',    // CF Turnstile site key（公开）
+            'turnstile_secret_key',  // CF Turnstile secret key（私密）
         ];
     }
 }

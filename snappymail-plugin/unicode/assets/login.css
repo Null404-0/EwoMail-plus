@@ -1,0 +1,167 @@
+/*
+ * UNICODE login page styling.
+ * 设计原则：能用 CSS 改的不用 JS；只在 SnappyMail DOM 已经确定的元素上覆盖。
+ * 颜色：主红 #dc143c，主黑 #1a1a1a，深红 #8b0000（悬停/强调）。
+ */
+
+/* 登录页背景 —— 红黑渐变，浅一点的深红角落让画面不死板 */
+body.rl-login,
+#rl-app.rl-login {
+    background: radial-gradient(ellipse at 30% 20%, #2a0d13 0%, #0e0a0c 70%, #000 100%) fixed !important;
+    color: #e5e5e5;
+}
+
+/* 登录卡片：黑底 + 暗红边框 */
+#rl-app .b-login-form,
+#rl-app .login-form,
+#rl-app .card-login {
+    background: rgba(20, 18, 20, 0.92) !important;
+    border: 1px solid #4a0a14 !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(220, 20, 60, 0.08) !important;
+    border-radius: 6px;
+}
+
+/* 我们注入的 brand header（login.js 创建 .unicode-brand） */
+.unicode-brand {
+    text-align: center;
+    margin: 6px 0 18px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(220, 20, 60, 0.18);
+}
+.unicode-brand img,
+.unicode-brand svg {
+    max-width: 72px;
+    height: auto;
+    display: block;
+    margin: 0 auto 8px;
+}
+.unicode-brand .name {
+    color: #dc143c;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 4px;
+    margin: 0;
+    text-shadow: 0 0 18px rgba(220, 20, 60, 0.4);
+}
+.unicode-brand .slogan {
+    color: #999;
+    font-size: 11px;
+    margin: 4px 0 0;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+.unicode-brand .slogan-cn {
+    color: #aaa;
+    font-size: 12px;
+    margin: 2px 0 0;
+    letter-spacing: 1px;
+}
+
+/* 输入框：浅一点的暗灰底，强调聚焦时的红边 */
+#rl-app .b-login-form input[type="text"],
+#rl-app .b-login-form input[type="email"],
+#rl-app .b-login-form input[type="password"],
+#rl-app .login-form input[type="text"],
+#rl-app .login-form input[type="email"],
+#rl-app .login-form input[type="password"] {
+    background: #222 !important;
+    color: #e5e5e5 !important;
+    border: 1px solid #3a3a3a !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+#rl-app .b-login-form input:focus,
+#rl-app .login-form input:focus {
+    border-color: #dc143c !important;
+    box-shadow: 0 0 0 2px rgba(220, 20, 60, 0.22) !important;
+    outline: none !important;
+}
+
+/* 按钮：主红，悬停深红 */
+#rl-app .b-login-form button,
+#rl-app .b-login-form .btn-primary,
+#rl-app .login-form button,
+#rl-app .login-form .btn-primary {
+    background: linear-gradient(180deg, #dc143c, #b30f30) !important;
+    border: none !important;
+    color: #fff !important;
+    font-weight: 600;
+    letter-spacing: 1px;
+    transition: background 0.15s ease, transform 0.05s ease;
+}
+#rl-app .b-login-form button:hover,
+#rl-app .b-login-form .btn-primary:hover,
+#rl-app .login-form button:hover,
+#rl-app .login-form .btn-primary:hover {
+    background: linear-gradient(180deg, #b30f30, #8b0000) !important;
+}
+#rl-app .b-login-form button:active,
+#rl-app .login-form button:active {
+    transform: translateY(1px);
+}
+/* Turnstile 没解时按钮 disabled 状态做个视觉反馈 */
+#rl-app .b-login-form button[disabled],
+#rl-app .login-form button[disabled],
+#rl-app .b-login-form button.unicode-locked,
+#rl-app .login-form button.unicode-locked {
+    background: #444 !important;
+    color: #888 !important;
+    cursor: not-allowed !important;
+}
+
+/* 关闭外发的红色公告横幅 */
+.unicode-banner {
+    background: linear-gradient(90deg, #8b0000 0%, #b30f30 100%);
+    color: #fff;
+    padding: 10px 16px;
+    margin: 0 0 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.5;
+    box-shadow: 0 2px 12px rgba(139, 0, 0, 0.35);
+}
+.unicode-banner strong {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 14px;
+}
+
+/* Turnstile widget 容器：留出空间避免和按钮挤一起 */
+.unicode-turnstile {
+    margin: 14px 0;
+    min-height: 65px;
+    display: flex;
+    justify-content: center;
+}
+.unicode-turnstile:empty::before {
+    /* widget 渲染前的占位提示 */
+    content: '正在加载人机验证…';
+    color: #888;
+    font-size: 12px;
+    align-self: center;
+}
+
+/* 隐藏 SnappyMail 登录页自带的标题 / logo（用我们注入的 .unicode-brand 替代） */
+#rl-app .b-login-form h1,
+#rl-app .b-login-form h2,
+#rl-app .login-form h1,
+#rl-app .login-form h2,
+#rl-app .login-form .b-logo,
+#rl-app .b-login-form .b-logo {
+    display: none !important;
+}
+
+/* 登录页底部「记住我」labels 颜色调到浅灰 */
+#rl-app .b-login-form label,
+#rl-app .login-form label {
+    color: #ccc !important;
+}
+
+/* ===== 用户进入 webmail 后 ===== */
+
+/* 隐藏 Settings → Themes 入口（用户层面禁主题切换） */
+#rl-app a[href*="settings/themes"],
+#rl-app [data-route="settings/themes"],
+#rl-app .b-settings-menu li[data-name="Themes"],
+#rl-app .b-settings-menu a[href*="Themes"] {
+    display: none !important;
+}

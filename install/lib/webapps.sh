@@ -113,5 +113,49 @@ install_webapps() {
         find /ewomail/www/snappymail/data -type f -exec chmod 0640 {} +
     fi
 
+    install_unicode_plugin
+
     ui_ok "Web 应用已安装到 /ewomail/www"
+}
+
+# 把 UNICODE webmail 品牌 plugin 部署到 SnappyMail data 目录，并启用 +
+# 写一份默认配置（turnstile 关、outbound 正常）。装机阶段调，admin_init
+# 还没渲染 /ewomail/sbin/ewomail-helper —— 我们直接 bash 跑模板里的同一份
+# 代码（snappy-plugin-{enable,config-write} 这两个 case 分支自包含、不
+# 依赖任何环境变量，root 直接 bash 跑没问题）。
+install_unicode_plugin() {
+    local src="${REPO_DIR}/snappymail-plugin/unicode"
+    local dst="/ewomail/www/snappymail/data/_data_/_default_/plugins/unicode"
+
+    if [[ ! -d "${src}" ]]; then
+        ui_warn "未找到 ${src}，跳过 UNICODE plugin 部署"
+        return 0
+    fi
+
+    install -d -m 0750 -o www-data -g www-data \
+        /ewomail/www/snappymail/data/_data_/_default_/plugins
+    rm -rf "${dst}"
+    cp -a "${src}" "${dst}"
+
+    # 权限：root 拥有，www-data 读
+    chown -R root:www-data "${dst}"
+    find "${dst}" -type d -exec chmod 0750 {} +
+    find "${dst}" -type f -exec chmod 0640 {} +
+    # assets/* 要走 webroot 给浏览器读，必须 world-readable
+    if [[ -d "${dst}/assets" ]]; then
+        chmod 0755 "${dst}/assets"
+        find "${dst}/assets" -type f -exec chmod 0644 {} +
+    fi
+
+    # 用 helper 模板直接执行（admin_init.sh 还没把它装到 /ewomail/sbin/）
+    local helper_tmpl="${INSTALLER_DIR}/templates/admin-helper/ewomail-helper"
+    if [[ -x "${helper_tmpl}" ]] || [[ -f "${helper_tmpl}" ]]; then
+        bash "${helper_tmpl}" snappy-plugin-enable unicode \
+            >>"${LOG_FILE}" 2>&1 || ui_warn "snappy-plugin-enable 失败（详见日志）"
+        printf '%s' '{"turnstile_enabled":"no","turnstile_site_key":"","turnstile_secret_key":"","outbound_disabled":"no"}' \
+            | bash "${helper_tmpl}" snappy-plugin-config-write unicode \
+            >>"${LOG_FILE}" 2>&1 || ui_warn "snappy-plugin-config-write 失败（详见日志）"
+    fi
+
+    ui_ok "UNICODE plugin 已部署到 SnappyMail（默认 Turnstile 关闭，可在面板里启用）"
 }
