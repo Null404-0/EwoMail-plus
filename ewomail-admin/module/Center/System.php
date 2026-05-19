@@ -160,8 +160,20 @@ Rout::put('webmail-config', function () {
         E::error('写入 plugin 配置失败：' . $r['out']);
     }
 
+    // 每次都顺手 re-enable plugin —— 装机时 enable 写过一次 application.ini，
+    // 但 SnappyMail 首次 bootstrap 时会用默认模板整个覆盖（除非 ini 已经
+    // 长得像它自己的模板）。这里在首次 admin 保存时再写一次：此时 SnappyMail
+    // 已经 bootstrap，我们 append [plugins] 段不会被覆盖。idempotent，重复
+    // 跑无副作用。
+    $r2 = Helper::run(['snappy-plugin-enable', 'unicode']);
+    if (!$r2['ok']) {
+        // 启用失败不阻断保存（配置已经写了），但要让用户看到
+        AdminLog::save(['ac' => 'edit', 'c' => 'Webmail 品牌已保存，但 plugin 启用失败：' . substr($r2['out'], 0, 200)]);
+        E::error('配置已保存，但 plugin 启用失败：' . $r2['out']);
+    }
+
     AdminLog::save(['ac' => 'edit', 'c' => 'Webmail 品牌 + Turnstile']);
-    E::success('已保存（Webmail 下次刷新即生效）');
+    E::success('已保存并已启用 UNICODE plugin（Webmail 下次刷新即生效）');
 });
 
 
