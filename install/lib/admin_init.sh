@@ -92,5 +92,13 @@ EOF
     chmod 0440 /etc/sudoers.d/ewomail
     run visudo -cf /etc/sudoers.d/ewomail
 
+    # 给 i_domains 里每条 active 域名写一份 SnappyMail .json，否则 webmail
+    # 登录会被"no domain configuration"挡。i_domains 在前面 INSERT 进的
+    # ${EWO_DOMAIN} 这条；后续在 admin 后台再加域名时由 Domain 保存逻辑
+    # 通过 helper 同步，update.sh 也会重新跑一遍 sync。
+    if [[ -d /ewomail/www/snappymail ]]; then
+        run /ewomail/sbin/ewomail-helper snappy-domain-sync
+    fi
+
     ui_ok "业务数据库已初始化；管理员账号 admin（密码见凭据文件）"
 }
