@@ -221,43 +221,107 @@
         return _origSend.call(this, body);
     };
 
-    // ---------- 抑制登录后的欢迎弹窗 ----------
+    // ---------- 抑制不需要的弹窗 + 隐藏不需要的菜单项 ----------
     //
-    // SnappyMail 不同版本里"每次登录都跳的提示"对应不同 modal。这里用
-    // MutationObserver 监听 <body> 新增节点，匹配几种常见 class / 文案就
-    // 直接 dismiss。文案识别保守 —— 只挑包含「welcome / 欢迎 /
-    // 提示 / change.*password」字眼的（避免把别的弹窗也吞掉）。
+    // 用 MutationObserver 监听 body 新增节点和子树变化。多种识别策略并用：
+    //   - 弹窗：内容文本含「更新身份 / Update Identity / Welcome / 欢迎」→ 点关闭
+    //   - 文件夹列表里的「不可见 / Invisible / not visible / Hidden」假节点 → 隐藏
+    //   - 设置侧栏的「主题 / Themes」入口 → 隐藏并阻塞跳转
+    // 文本识别比 class 名稳定 —— SnappyMail 不同版本 class 名变化大。
 
-    var WELCOME_HINTS = /欢迎|welcome|onboard|首次登录/i;
+    var POPUP_KILL_HINTS = /更新身份|Update Identity|欢迎|welcome|onboard|首次登录/i;
+    var INVISIBLE_FOLDER = /^\s*(不可见|invisible|hidden|not\s*visible)\s*$/i;
+    var THEME_LABEL      = /^\s*(主题|Themes?|Theme)\s*$/i;
 
-    function dismissWelcome(node) {
+    function killPopup(node) {
         try {
-            var txt = (node.textContent || '').slice(0, 200);
-            if (!WELCOME_HINTS.test(txt)) return;
-            // 优先点 modal 的关闭按钮（CSS 可能用 fade-out 动画，直接 remove 太粗）
-            var btn = node.querySelector('button.close, .b-close, [data-bind*="close"]');
+            var txt = (node.textContent || '').slice(0, 400);
+            if (!POPUP_KILL_HINTS.test(txt)) return false;
+            // 优先点关闭按钮，让 SnappyMail 自己管状态
+            var btn = node.querySelector('button.close, .b-close, [data-bind*="closePopup"], [data-bind*="cancelCommand"]');
             if (btn) {
                 btn.click();
             } else {
                 node.style.display = 'none';
+                // 同时清掉可能的 backdrop
+                document.querySelectorAll('.modal-backdrop, .b-popup-backdrop').forEach(function (b) {
+                    b.style.display = 'none';
+                });
+            }
+            return true;
+        } catch (e) { return false; }
+    }
+
+    function hideInvisibleFolders(root) {
+        // SnappyMail 文件夹列表 ul/li 结构里有一行"不可见"是 system pseudo-folder
+        // 用于让用户取消订阅别的文件夹。普通用户看着困惑，隐藏掉。
+        try {
+            var liList = (root || document).querySelectorAll('li, .b-folder-item');
+            liList.forEach(function (li) {
+                // 只看直接文本，避免误把含子文件夹的节点也藏了
+                var label = li.querySelector('.name, [data-bind*="text"], a, span');
+                var t = label ? (label.textContent || '').trim() : '';
+                if (INVISIBLE_FOLDER.test(t)) {
+                    li.style.display = 'none';
+                    li.setAttribute('aria-hidden', 'true');
+                }
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    function hideThemeMenu(root) {
+        try {
+            // 1) data-route / href 匹配
+            (root || document).querySelectorAll(
+                'a[href*="themes" i], a[href*="theme" i][href*="settings" i], ' +
+                '[data-route*="theme" i], [data-name="Themes"], ' +
+                'li[data-name*="theme" i]'
+            ).forEach(function (el) { el.style.display = 'none'; });
+
+            // 2) 文本匹配兜底 —— 任意 a/li/span 直接文本是"主题"或"Themes"
+            (root || document).querySelectorAll('a, li').forEach(function (el) {
+                // 跳过有子 ul 的（避免误把"系统设置"之类带"主题"子菜单的整段藏了）
+                if (el.querySelector('ul, .b-folder-list')) return;
+                var t = (el.textContent || '').trim();
+                if (THEME_LABEL.test(t)) {
+                    var li = el.closest ? (el.closest('li') || el) : el;
+                    li.style.display = 'none';
+                }
+            });
+
+            // 3) 如果用户已经在 /settings/themes 路径上，把内容区也清掉
+            if (/\/settings\/themes/i.test(location.hash || location.pathname)) {
+                var main = document.querySelector('.b-settings-pane, .b-settings, main');
+                if (main) {
+                    main.innerHTML = '<div style="padding:30px;color:#888">主题已被管理员锁定为 UNICODE。</div>';
+                }
             }
         } catch (e) { /* ignore */ }
     }
 
-    var welcomeObserver = new MutationObserver(function (mutations) {
+    function sweep(root) {
+        killPopup(root || document.body);
+        hideInvisibleFolders(root);
+        hideThemeMenu(root);
+    }
+
+    // 监听 DOM 变化 —— SnappyMail 异步渲染设置/文件夹列表
+    var domObserver = new MutationObserver(function (mutations) {
         mutations.forEach(function (m) {
             m.addedNodes && m.addedNodes.forEach(function (n) {
                 if (n.nodeType !== 1) return;
-                // 直接是 popup 容器
-                if (/popup|modal|notification/.test(n.className || '')) {
-                    dismissWelcome(n);
+                // 弹窗类：直接判
+                if (/popup|modal|b-popup/i.test(n.className || '')) {
+                    killPopup(n);
                 }
-                // 或者子树里
-                if (typeof n.querySelectorAll === 'function') {
-                    n.querySelectorAll('.popup, .modal, .notification').forEach(dismissWelcome);
-                }
+                // 整个子树扫一遍
+                sweep(n);
             });
         });
+    });
+    // 也跑一次 hash change（SnappyMail 是 SPA，路由切换不会触发 DOM mutation）
+    window.addEventListener('hashchange', function () {
+        setTimeout(function () { sweep(document.body); }, 200);
     });
 
     // ---------- 启动 ----------
@@ -272,13 +336,17 @@
             if (TURNSTILE_ENABLED && TURNSTILE_SITE_KEY && loginFormEl()) {
                 renderTurnstile();
             }
+            // 顺便 sweep 一次（覆盖登录后初始渲染漏掉的情况）
+            sweep(document.body);
             // 60 次 ≈ 30 秒后还没出来就放弃（用户大概不在登录页）
             if ((ok && (widgetRendered || !TURNSTILE_ENABLED)) || tries > 60) {
                 clearInterval(iv);
             }
         }, 500);
 
-        welcomeObserver.observe(document.body, { childList: true, subtree: true });
+        domObserver.observe(document.body, { childList: true, subtree: true });
+        // 第一帧立刻扫一次（不等 mutation）
+        sweep(document.body);
     }
 
     if (document.readyState === 'loading') {

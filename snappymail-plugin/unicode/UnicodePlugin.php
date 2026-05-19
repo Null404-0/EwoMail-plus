@@ -12,19 +12,26 @@
  */
 class UnicodePlugin extends \RainLoop\Plugins\AbstractPlugin
 {
-    const NAME     = 'UNICODE';
-    const VERSION  = '1.0.0';
-    const AUTHOR   = 'EwoMail-plus';
-    const URL      = 'https://github.com/Null404-0/EwoMail-plus';
+    const NAME       = 'UNICODE';
+    const VERSION    = '1.0.0';
+    const RELEASE    = '2026-05-19';
+    const REQUIRED   = '2.0.0';
+    const CATEGORY   = 'General';
+    const AUTHOR     = 'EwoMail-plus';
+    const URL        = 'https://github.com/Null404-0/EwoMail-plus';
+    const LICENSE    = 'MIT';
     const DESCRIPTION = 'UNICODE 品牌定制 + Cloudflare Turnstile 验证 + 关闭外发公告';
 
     /** in-process cache of config.json */
     private static $cfg = null;
 
-    public function Init()
+    /** SnappyMail 某些版本要求 Init 有 :void 类型，加上更兼容 */
+    public function Init() : void
     {
         // 同时加载 config.js（先）和 login.js（后）—— 顺序保证 login.js 读到
         // window.UNICODE_CFG。SnappyMail 按 add 顺序串到 <head>。
+        // 第二个参数 false = 所有页面都加（不只是登录页）—— 我们需要在用户
+        // 登录后的 UI 里也跑 sweep（隐藏主题入口、不可见文件夹、抑制弹窗）。
         $this->addCss('assets/login.css');
         $this->addJs('assets/config.js');
         $this->addJs('assets/login.js');
