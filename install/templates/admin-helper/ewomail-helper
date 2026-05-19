@@ -66,6 +66,11 @@ SnappyMail:
                                            (creates config.json + assets/config.js)
   snappy-plugin-enable <name>              add plugin to application.ini [plugins]
   snappy-set-theme <name>                  set default theme in application.ini
+  snappy-domain-write <fqdn>               write per-domain IMAP/SMTP json
+                                           (用 i_domains 里那条；指向 127.0.0.1）
+  snappy-domain-delete <fqdn>              remove the per-domain json
+  snappy-domain-sync                       (re)write a json for every active row
+                                           in i_domains（装机 / update 时跑）
 EOF
     exit 2
 }
@@ -848,6 +853,62 @@ EOF
         ' "${ini}" > "${tmp}"
         install -m 0640 -o www-data -g www-data "${tmp}" "${ini}"
         echo "set theme to: ${theme}"
+        ;;
+
+    # SnappyMail 每个邮件域名都要一份独立的 .json 配置文件，不然登录会被
+    # "no domain configuration" 拒掉。我们指向 127.0.0.1 + verify_peer=false
+    # —— 环回连接没 MITM 风险，避免 IMAP/SMTP 证书 SNI 校验和 EwoMail 域名
+    # 不一致（mail.<host> 的 LE 证书对邮件域 user@otherdomain.com 不签）的
+    # 兼容性问题。Sieve 默认开（dovecot pigeonhole 4190）。
+    snappy-domain-write)
+        [[ $# -eq 1 ]] && valid_fqdn "$1" || usage
+        name="$1"
+        dir="/ewomail/www/snappymail/data/_data_/_default_/domains"
+        install -d -m 0750 -o www-data -g www-data "${dir}"
+        tmp=$(mktemp); trap "rm -f '${tmp}'" EXIT
+        cat > "${tmp}" <<'JSON'
+{
+    "IMAP": {
+        "host": "127.0.0.1", "port": 993, "type": 1, "timeout": 300,
+        "shortLogin": false,
+        "ssl": { "verify_peer": false, "verify_peer_name": false, "allow_self_signed": true, "SNI_enabled": true }
+    },
+    "SMTP": {
+        "host": "127.0.0.1", "port": 587, "type": 2, "timeout": 60,
+        "shortLogin": false,
+        "ssl": { "verify_peer": false, "verify_peer_name": false, "allow_self_signed": true, "SNI_enabled": true },
+        "useAuth": true, "setSender": false, "usePhpMail": false
+    },
+    "Sieve": {
+        "host": "127.0.0.1", "port": 4190, "type": 0, "timeout": 10,
+        "shortLogin": false,
+        "ssl": { "verify_peer": false, "verify_peer_name": false, "allow_self_signed": true, "SNI_enabled": true },
+        "enabled": true
+    },
+    "whiteList": ""
+}
+JSON
+        install -m 0640 -o www-data -g www-data "${tmp}" "${dir}/${name}.json"
+        echo "wrote ${dir}/${name}.json"
+        ;;
+
+    snappy-domain-delete)
+        [[ $# -eq 1 ]] && valid_fqdn "$1" || usage
+        f="/ewomail/www/snappymail/data/_data_/_default_/domains/$1.json"
+        rm -f "${f}" && echo "removed ${f}"
+        ;;
+
+    snappy-domain-sync)
+        [[ $# -eq 0 ]] || usage
+        dir="/ewomail/www/snappymail/data/_data_/_default_/domains"
+        install -d -m 0750 -o www-data -g www-data "${dir}"
+        # 用 mysql 直接拉 active 域名列表；每条调一次自己的 write 分支
+        while IFS= read -r d; do
+            [[ -z "$d" ]] && continue
+            valid_fqdn "$d" || { echo "skip invalid name: $d" >&2; continue; }
+            "$0" snappy-domain-write "$d"
+        done < <(mysql -uroot -N -B ewomail -e \
+            "SELECT name FROM i_domains WHERE active=1" 2>/dev/null)
         ;;
 
     *) usage ;;

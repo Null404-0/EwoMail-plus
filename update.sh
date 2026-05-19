@@ -399,6 +399,16 @@ if [[ -d /ewomail/www/snappymail && -d "${REPO_DIR}/snappymail-plugin/unicode" ]
     ui_ok "UNICODE plugin 已同步（缓存已刷新）"
 fi
 
+# ---- 8. SnappyMail per-domain configs -----------------------------------
+# i_domains 里每条 active 域名都需要一份 .json，否则 webmail 登录会被
+# "no domain configuration" 拒。helper 内部 idempotent，重复跑不出问题。
+if [[ -d /ewomail/www/snappymail && -x /ewomail/sbin/ewomail-helper ]]; then
+    step "同步 SnappyMail 域名配置"
+    /ewomail/sbin/ewomail-helper snappy-domain-sync \
+        >>"${LOG_FILE}" 2>&1 || ui_warn "snappy-domain-sync 失败（详见日志）"
+    ui_ok "SnappyMail 域名配置已同步"
+fi
+
 # ---- 8. 总结 -------------------------------------------------------------
 echo
 ui_ok "更新完成。"

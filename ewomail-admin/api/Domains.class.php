@@ -82,13 +82,22 @@ class Domains extends App
             
             $r = App::$db->insert('domains',$newData);
         }
-        
+
+        // 同步给 SnappyMail：每个域名需要一份独立 .json，否则 webmail 登录
+        // 直接被 "no domain configuration" 拒。新增 + 编辑都重写（编辑可能
+        // 翻 active 字段，重写一份是 idempotent 的）。失败不阻断保存动作。
+        if ($active) {
+            Helper::run(['snappy-domain-write', $name]);
+        } else {
+            Helper::run(['snappy-domain-delete', $name]);
+        }
+
         $logData = [
             'ac'=>$id?'edit':'add',
             'c'=>'邮件域名：'.$name
         ];
         AdminLog::save($logData);
-        
+
     }
 
     /**
@@ -100,6 +109,9 @@ class Domains extends App
         $row = $this->getOne($id);
         $where = "id=$id";
         App::$db->delete("domains",$where);
+
+        // 同步给 SnappyMail —— 删 .json，防止 webmail 还可以用这域名登
+        Helper::run(['snappy-domain-delete', $row['name']]);
 
         $logData = [
             'ac'=>'del',
