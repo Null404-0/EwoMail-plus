@@ -1,15 +1,43 @@
 /*
  * UNICODE login page styling.
- * 设计原则：让 SnappyMail 的当前主题（默认 Black Wood）的背景透出来，
- * 我们只在 brand / banner / 关键按钮上叠红色强调。
+ * SnappyMail 的登录页不应用用户主题（确认过），所以这里硬塞一组暗色
+ * 木纹风格的 CSS gradient 模拟 Black Wood 的视觉效果。不依赖外部
+ * 图片资源 —— 避免猜 SnappyMail bundle 里的纹理路径。
+ *
  * 颜色：主红 #dc143c，深红 #8b0000（悬停/强调）。
  */
 
-/* 登录卡片：半透明深色 + 暗红边框，让 Black Wood 的木纹背景从四周透出 */
+/* 登录页背景：横向木纹 + 中心暖色光晕，呼应 Black Wood 风格 */
+body.rl-login,
+#rl-app.rl-login {
+    background-color: #1a1612 !important;
+    background-image:
+        radial-gradient(ellipse at 50% 35%, rgba(80, 50, 30, 0.25) 0%, transparent 60%),
+        repeating-linear-gradient(
+            90deg,
+            transparent 0,
+            rgba(255, 255, 255, 0.015) 1px,
+            transparent 2px,
+            transparent 200px
+        ),
+        repeating-linear-gradient(
+            0deg,
+            #14100c 0,
+            #1c1815 4px,
+            #181410 8px,
+            #221d18 14px,
+            #16120f 20px,
+            #1f1a16 26px
+        ) !important;
+    background-attachment: fixed !important;
+    color: #e5e5e5;
+}
+
+/* 登录卡片：半透明深色 + 暗红边框，让背后的木纹隐约透出 */
 #rl-app .b-login-form,
 #rl-app .login-form,
 #rl-app .card-login {
-    background: rgba(20, 18, 20, 0.85) !important;
+    background: rgba(18, 14, 12, 0.88) !important;
     border: 1px solid #4a0a14 !important;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(220, 20, 60, 0.08) !important;
     border-radius: 6px;

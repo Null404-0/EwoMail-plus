@@ -30,22 +30,27 @@ class UnicodePlugin extends \RainLoop\Plugins\AbstractPlugin
     {
         // 同时加载 config.js（先）和 login.js（后）—— 顺序保证 login.js 读到
         // window.UNICODE_CFG。SnappyMail 按 add 顺序串到 <head>。
-        // 第二个参数 false = 所有页面都加（不只是登录页）—— 我们需要在用户
-        // 登录后的 UI 里也跑 sweep（隐藏主题入口、不可见文件夹、抑制弹窗）。
         $this->addCss('assets/login.css');
         $this->addJs('assets/config.js');
         $this->addJs('assets/login.js');
 
         // 登录前的人机验证拦截。SnappyMail 不同版本里 login 钩子名略有差异，
         // 同时挂多个常见 hook 名提高兼容性 —— 任何一个先触发都能拒绝登录。
-        // 触发后实际验证只跑一次（self::$verified 缓存），不会重复打 LE。
         $this->addHook('login.credentials',        'BeforeLogin');
         $this->addHook('login.credentials.step-1', 'BeforeLogin');
         $this->addHook('login.credentials.step-2', 'BeforeLogin');
 
-        // 修改密码 JSON 端点 —— SnappyMail 没自带 SQL backend 的
-        // change-password plugin，我们自己接 EwoMail 的 i_users 表更直接。
-        $this->addJsonHook('UnicodeChangePassword', 'doChangePassword');
+        // 修改密码 JSON 端点。同时挂多个 action 名，覆盖 SnappyMail 不同
+        // 版本可能自动加的前缀（Do / Plugin），任一被 dispatcher 接走都能干活。
+        // 不同 SnappyMail 版本里 addJsonHook 注册的 action 是否被 main
+        // dispatcher 识别有差异，多挂几个保险。
+        $this->addJsonHook('UnicodeChangePassword',        'doChangePassword');
+        $this->addJsonHook('DoUnicodeChangePassword',      'doChangePassword');
+        $this->addJsonHook('PluginUnicodeChangePassword',  'doChangePassword');
+
+        // 调试用：把 Init 调用本身记到 PHP error log，确认 plugin 真的被
+        // SnappyMail 加载了 + 这几个 hook 真的被注册了
+        error_log('[UNICODE] Init done; CSS/JS added; login + UnicodeChangePassword hooks registered');
     }
 
     /** 读 plugin 目录下的 config.json，结果 in-memory 缓存。 */

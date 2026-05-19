@@ -438,13 +438,37 @@
     }
 
     function changePasswordRequest(oldp, newp) {
-        // SnappyMail 的 plugin addJsonHook 路由 URL 在不同版本里可能略不同，
-        // 试两种最常见的 pattern。一种成功就 return。
-        var paths = [
-            '/?/Json/&q[]=/0/0/UnicodeChangePassword/',
-            '/?/UnicodeChangePassword/0/' + Math.random().toString(36).slice(2) + '/'
+        // SnappyMail 不同版本 plugin JSON 端点的 URL 形态 + action 名前缀
+        // 都可能略不同。这里穷举几种组合，任一返回真实 Result 即用。
+        //
+        // URL pattern 候选：
+        //   /?/<Action>/0/<rand>/       —— 主流模式（同 AppData 路由格式）
+        //   /?/Json/<Action>/0/<rand>/  —— 加 Json 前缀的备选
+        // action 名候选：
+        //   UnicodeChangePassword       —— addJsonHook 注册的原名
+        //   DoUnicodeChangePassword     —— SnappyMail 内部某些版本会自动加 "Do" 前缀
+        //   PluginUnicodeChangePassword —— 极少数版本的 plugin 命名空间前缀
+        // 另外把 Action 名同时塞到 POST body 里冗余传一份 —— 部分 dispatcher
+        // 从 body 而不是 URL 读 action 名。
+
+        var rand = Math.random().toString(36).slice(2);
+        var actionNames = [
+            'UnicodeChangePassword',
+            'DoUnicodeChangePassword',
+            'PluginUnicodeChangePassword'
         ];
-        var body = new URLSearchParams({ OldPassword: oldp, NewPassword: newp });
+        var urlTemplates = [
+            '/?/{A}/0/' + rand + '/',
+            '/?/Json/{A}/0/' + rand + '/',
+            '/?/Json/&q[]=/0/0/{A}/'
+        ];
+        var paths = [];
+        actionNames.forEach(function (a) {
+            urlTemplates.forEach(function (t) {
+                paths.push({ url: t.replace('{A}', a), action: a });
+            });
+        });
+
         var token = '';
         try {
             if (window.rl && window.rl.settings && typeof window.rl.settings.app === 'function') {
@@ -457,18 +481,51 @@
             'X-SM-Token': token
         };
 
+        function bodyFor(actionName) {
+            return new URLSearchParams({
+                Action: actionName,            // 冗余：dispatcher 可能从 body 读
+                OldPassword: oldp,
+                NewPassword: newp
+            });
+        }
+
+        function isActionUnknown(j) {
+            if (!j) return false;
+            if (j.Action === 'Unknown') return true;
+            if (j.code === 903) return true;
+            if (j.message && /InvalidInputArgument/i.test(j.message)) return true;
+            if (j.messageAdditional && /Action\s+unknown/i.test(j.messageAdditional)) return true;
+            return false;
+        }
+
         function tryNext(i) {
-            if (i >= paths.length) return Promise.reject(new Error('所有路径都失败'));
-            return fetch(paths[i], { method: 'POST', body: body, headers: headers, credentials: 'same-origin' })
+            if (i >= paths.length) {
+                return Promise.reject(new Error(
+                    '所有 URL pattern 都被 SnappyMail 当作 "Action unknown" 拒绝 —— ' +
+                    '说明 addJsonHook 在你这个 SnappyMail 版本上没把 action 注册到 dispatcher 里。' +
+                    '请把 PHP error log（journalctl -u php8.2-fpm 或 /var/log/php*.log）发给我。'
+                ));
+            }
+            var p = paths[i];
+            return fetch(p.url, {
+                method: 'POST',
+                body: bodyFor(p.action),
+                headers: headers,
+                credentials: 'same-origin'
+            })
                 .then(function (r) {
                     if (!r.ok) throw new Error('HTTP ' + r.status);
                     return r.json();
                 })
                 .then(function (j) {
-                    // 如果 SnappyMail 不认这个 action 名，会返回 {Action: ..., ErrorCode: ...} 或类似
+                    // SnappyMail 不认 action 名的标志（多种格式都识别）→ 试下一个
+                    if (isActionUnknown(j)) {
+                        try { console.warn('[UNICODE] action-unknown at ' + p.url, j); } catch (e) {}
+                        throw new Error('action-unknown');
+                    }
+                    // 我们 PHP 端约定返回 {Result: {success: bool, ...}}
                     if (j && j.Result && typeof j.Result === 'object') return j;
-                    if (j && j.error) throw new Error(j.error);
-                    if (j && j.ErrorCode) throw new Error('SnappyMail 返回 ErrorCode=' + j.ErrorCode);
+                    // 其他奇怪格式：直接返给上层
                     return j;
                 })
                 .catch(function (e) {
