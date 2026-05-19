@@ -141,10 +141,21 @@ class SystemConfig extends App
         }
         if ($current === 'webmail' && $sectEnd === -1) $sectEnd = count($lines);
 
-        // 处理未存在的键：追加到 [webmail] 段末尾
+        // 处理未存在的键：追加到 [webmail] 段末尾。
+        // [webmail] 段不存在时（SnappyMail 还没 bootstrap 完整模板，或装机阶段
+        // 只写了 [plugins] 段），整段一起补到文件末尾，否则 admin 面板保存品牌
+        // 字段全被静默丢弃。
         $missing = array_diff_key($updates, $applied);
-        if ($missing && $sectStart >= 0) {
+        if ($missing) {
             $insert = [];
+            if ($sectStart < 0) {
+                // 没 [webmail] 段：先补段头
+                if (!empty($lines) && substr(end($lines), -1) !== "\n") {
+                    $lines[count($lines) - 1] .= "\n";
+                }
+                $insert[] = "[webmail]\n";
+                $sectEnd  = count($lines);
+            }
             foreach ($missing as $k => $v) {
                 $esc = '"' . addcslashes($v, "\"\\") . '"';
                 $insert[] = $k . ' = ' . $esc . "\n";
