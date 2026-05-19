@@ -10,13 +10,13 @@
                 <p>
                     <a href="{U('/Cert/backup')}" class="button bg-blue">备份SSL证书</a>
                     <button type="button" class="button border-green btn-restore-pick">恢复证书</button>
-                    <em style="color:#888">备份会下载当前证书和私钥；恢复后自动部署并重载服务。</em>
+                    <em style="color:#888">一句话：先点“备份SSL证书”下载 .tar.gz，再点“恢复证书”上传同类文件即可自动部署并重载服务。</em>
                 </p>
             {else}
                 <em>尚未部署证书。</em>
                 <p style="margin-top:10px">
                     <button type="button" class="button border-green btn-restore-pick">恢复证书</button>
-                    <em style="color:#888">选择之前备份的 .tar.gz 文件，恢复后自动部署。</em>
+                    <em style="color:#888">一句话：上传之前备份的 .tar.gz，系统会自动恢复并部署证书。</em>
                 </p>
             {/if}
             <form id="restore-form" enctype="multipart/form-data" style="display:none">
