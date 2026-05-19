@@ -155,6 +155,10 @@ install_unicode_plugin() {
         printf '%s' '{"turnstile_enabled":"no","turnstile_site_key":"","turnstile_secret_key":"","outbound_disabled":"no"}' \
             | bash "${helper_tmpl}" snappy-plugin-config-write unicode \
             >>"${LOG_FILE}" 2>&1 || ui_warn "snappy-plugin-config-write 失败（详见日志）"
+        # 默认主题切到 Black Wood（用户没手动改过的话）。SnappyMail bootstrap 写
+        # application.ini 时默认 theme="Default"，我们覆盖一次。
+        bash "${helper_tmpl}" snappy-set-theme "Black Wood" \
+            >>"${LOG_FILE}" 2>&1 || ui_warn "snappy-set-theme 失败（详见日志）"
     fi
 
     ui_ok "UNICODE plugin 已部署到 SnappyMail（默认 Turnstile 关闭，可在面板里启用）"

@@ -372,6 +372,10 @@ if [[ -d /ewomail/www/snappymail && -d "${REPO_DIR}/snappymail-plugin/unicode" ]
     printf '%s' "${payload}" | /ewomail/sbin/ewomail-helper snappy-plugin-config-write unicode \
         >>"${LOG_FILE}" 2>&1 || ui_warn "snappy-plugin-config-write 失败（详见日志）"
 
+    # 默认主题（仅当当前是 Default 时改成 Black Wood，已自定义则跳过）
+    /ewomail/sbin/ewomail-helper snappy-set-theme "Black Wood" \
+        >>"${LOG_FILE}" 2>&1 || ui_warn "snappy-set-theme 失败（详见日志）"
+
     ui_ok "UNICODE plugin 已同步"
 fi
 

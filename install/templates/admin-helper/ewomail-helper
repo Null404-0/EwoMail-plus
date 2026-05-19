@@ -65,6 +65,7 @@ SnappyMail:
   snappy-plugin-config-write <name>        write plugin config from stdin JSON
                                            (creates config.json + assets/config.js)
   snappy-plugin-enable <name>              add plugin to application.ini [plugins]
+  snappy-set-theme <name>                  set default theme in application.ini
 EOF
     exit 2
 }
@@ -814,6 +815,39 @@ EOF
         ' "${ini}" > "${tmp}"
 
         install -m 0640 -o www-data -g www-data "${tmp}" "${ini}"
+        ;;
+
+    # 设置 SnappyMail 默认主题。仅当用户当前还是出厂默认（"Default" 或空）
+    # 时才覆盖，避免擦掉管理员手动定制过的值。
+    snappy-set-theme)
+        [[ $# -eq 1 ]] || usage
+        theme="$1"
+        # 主题名允许字母/数字/空格/连字符/下划线，跟 SnappyMail 文件夹命名一致
+        [[ "${theme}" =~ ^[A-Za-z0-9_\ \-]+$ ]] || { echo "invalid theme name" >&2; exit 2; }
+
+        ini="/ewomail/www/snappymail/data/_data_/_default_/configs/application.ini"
+        [[ -f "${ini}" ]] || { echo "application.ini not found" >&2; exit 1; }
+
+        # 取当前 [webmail] 段下的 theme 值
+        current=$(awk '
+            /^\[/ { in_w = ($0 == "[webmail]") ? 1 : 0; next }
+            in_w && /^theme[[:space:]]*=/ {
+                v=$0; sub(/^[^=]*=[[:space:]]*/, "", v); gsub(/"/, "", v); print v; exit
+            }
+        ' "${ini}")
+        if [[ -n "${current}" && "${current}" != "Default" && "${current}" != "${theme}" ]]; then
+            echo "skipped: theme already customized to '${current}'"
+            exit 0
+        fi
+
+        tmp=$(mktemp); trap "rm -f '${tmp}'" EXIT
+        awk -v t="${theme}" '
+            /^\[/ { in_w = ($0 == "[webmail]") ? 1 : 0 }
+            in_w && /^theme[[:space:]]*=/ { print "theme = \"" t "\""; next }
+            { print }
+        ' "${ini}" > "${tmp}"
+        install -m 0640 -o www-data -g www-data "${tmp}" "${ini}"
+        echo "set theme to: ${theme}"
         ;;
 
     *) usage ;;

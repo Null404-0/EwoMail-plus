@@ -199,24 +199,44 @@ class UnicodePlugin extends \RainLoop\Plugins\AbstractPlugin
                 ]
             );
 
-            // 验证当前密码（EwoMail 用 MD5）—— 用 prepared statement 防 SQL 注入
-            $stmt = $pdo->prepare("SELECT id FROM i_users WHERE email = ? AND password = MD5(?) LIMIT 1");
-            $stmt->execute([$email, $oldPwd]);
-            if (!$stmt->fetchColumn()) {
-                return ['Result' => ['success' => false, 'error' => '当前密码错误']];
+            // 先确认账户在 i_users 里存在 —— 区分"账户不存在"和"密码错误"两种
+            // 不同的失败，避免一律提示"密码错误"误导用户排错
+            $stmt = $pdo->prepare("SELECT id, password FROM i_users WHERE email = ? LIMIT 1");
+            $stmt->execute([$email]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if (!$row) {
+                error_log('UNICODE pwchange: account not in i_users: ' . $email);
+                return ['Result' => ['success' => false,
+                    'error' => '账户 ' . $email . ' 不在 EwoMail 用户表里（可能是 webmail 自己的 admin 账号，不是邮箱用户）']];
+            }
+
+            // EwoMail 历史上密码就是 md5($password) 存的，没 salt。直接对比。
+            // 同时也兼容理论上的 sha256/bcrypt 升级 —— 但先验 MD5 这条路径。
+            $expectedMd5 = md5($oldPwd);
+            if (strtolower((string)$row['password']) !== strtolower($expectedMd5)) {
+                error_log(sprintf(
+                    'UNICODE pwchange: password mismatch for %s (stored len=%d, expected MD5 len=%d)',
+                    $email, strlen((string)$row['password']), strlen($expectedMd5)
+                ));
+                return ['Result' => ['success' => false,
+                    'error' => '当前密码不正确（账户 ' . $email . '）']];
             }
 
             // 更新
             $stmt = $pdo->prepare("UPDATE i_users SET password = MD5(?) WHERE email = ?");
             $stmt->execute([$newPwd, $email]);
             if ($stmt->rowCount() < 1) {
-                return ['Result' => ['success' => false, 'error' => '密码更新失败']];
+                return ['Result' => ['success' => false,
+                    'error' => '密码更新失败（rowCount=0），可能账户已被另一处会话修改']];
             }
 
             return ['Result' => ['success' => true, 'message' => '密码已修改，下次登录请使用新密码']];
+        } catch (\PDOException $e) {
+            error_log('UNICODE pwchange PDO error: ' . $e->getMessage());
+            return ['Result' => ['success' => false, 'error' => '数据库错误：' . $e->getMessage()]];
         } catch (\Throwable $e) {
-            error_log('UNICODE doChangePassword error: ' . $e->getMessage());
-            return ['Result' => ['success' => false, 'error' => '服务器错误']];
+            error_log('UNICODE pwchange error: ' . $e->getMessage());
+            return ['Result' => ['success' => false, 'error' => '服务器错误：' . $e->getMessage()]];
         }
     }
 }

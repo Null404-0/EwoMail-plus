@@ -330,27 +330,27 @@
         // 如果已经有 modal 就别重复开
         if (document.getElementById('unicode-pw-modal')) return;
 
+        // 一个密码输入框 + 眼睛切换按钮的小模板
+        var pwField = function (name, label, attrs) {
+            return '<div style="margin-bottom:14px">' +
+                '<label style="display:block;margin-bottom:5px;font-size:13px;color:#bbb">' + label + '</label>' +
+                '<div style="position:relative">' +
+                  '<input type="password" name="' + name + '" required ' + (attrs || '') +
+                    ' style="width:100%;padding:9px 38px 9px 10px;background:#222;border:1px solid #3a3a3a;color:#eee;border-radius:3px;box-sizing:border-box">' +
+                  '<button type="button" class="unicode-pw-toggle" tabindex="-1" aria-label="显示/隐藏密码" ' +
+                    'style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;color:#888;font-size:16px;padding:4px 8px;line-height:1">👁</button>' +
+                '</div>' +
+            '</div>';
+        };
         var html =
             '<div id="unicode-pw-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:99999;display:flex;align-items:center;justify-content:center;">' +
               '<div style="background:#1a1a1a;color:#e5e5e5;padding:28px 32px;border-radius:6px;border:1px solid #dc143c;width:420px;max-width:92vw;box-shadow:0 10px 50px rgba(0,0,0,0.7),0 0 0 1px rgba(220,20,60,0.15);">' +
                 '<h3 style="margin:0 0 18px;color:#dc143c;font-size:18px;font-weight:700;letter-spacing:1px">修改密码</h3>' +
                 '<form id="unicode-pw-form">' +
-                  '<div style="margin-bottom:14px">' +
-                    '<label style="display:block;margin-bottom:5px;font-size:13px;color:#bbb">当前密码</label>' +
-                    '<input type="password" name="old" required ' +
-                      'style="width:100%;padding:9px 10px;background:#222;border:1px solid #3a3a3a;color:#eee;border-radius:3px;box-sizing:border-box">' +
-                  '</div>' +
-                  '<div style="margin-bottom:14px">' +
-                    '<label style="display:block;margin-bottom:5px;font-size:13px;color:#bbb">新密码（8-64 位）</label>' +
-                    '<input type="password" name="newp" required minlength="8" maxlength="64" ' +
-                      'style="width:100%;padding:9px 10px;background:#222;border:1px solid #3a3a3a;color:#eee;border-radius:3px;box-sizing:border-box">' +
-                  '</div>' +
-                  '<div style="margin-bottom:16px">' +
-                    '<label style="display:block;margin-bottom:5px;font-size:13px;color:#bbb">再次输入新密码</label>' +
-                    '<input type="password" name="confirm" required ' +
-                      'style="width:100%;padding:9px 10px;background:#222;border:1px solid #3a3a3a;color:#eee;border-radius:3px;box-sizing:border-box">' +
-                  '</div>' +
-                  '<div id="unicode-pw-msg" style="min-height:1.4em;margin-bottom:12px;font-size:13px;color:#dc143c"></div>' +
+                  pwField('old',     '当前密码', '') +
+                  pwField('newp',    '新密码（8-64 位）', 'minlength="8" maxlength="64"') +
+                  pwField('confirm', '再次输入新密码', '') +
+                  '<div id="unicode-pw-msg" style="min-height:1.4em;margin-bottom:12px;font-size:13px;color:#dc143c;white-space:pre-wrap;word-break:break-word"></div>' +
                   '<div style="display:flex;gap:10px;">' +
                     '<button type="submit" style="flex:1;padding:10px;background:linear-gradient(180deg,#dc143c,#b30f30);color:#fff;border:none;border-radius:3px;cursor:pointer;font-weight:600;letter-spacing:1px">修改</button>' +
                     '<button type="button" id="unicode-pw-cancel" style="flex:1;padding:10px;background:#3a3a3a;color:#ccc;border:none;border-radius:3px;cursor:pointer">取消</button>' +
@@ -359,6 +359,23 @@
               '</div>' +
             '</div>';
         document.body.insertAdjacentHTML('beforeend', html);
+
+        // 眼睛切换：点一下 password ↔ text
+        document.querySelectorAll('#unicode-pw-modal .unicode-pw-toggle').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var input = btn.parentNode.querySelector('input');
+                if (!input) return;
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    btn.textContent = '🙈';
+                    btn.style.color = '#dc143c';
+                } else {
+                    input.type = 'password';
+                    btn.textContent = '👁';
+                    btn.style.color = '#888';
+                }
+            });
+        });
 
         function close() {
             var m = document.getElementById('unicode-pw-modal');
@@ -385,6 +402,8 @@
             msg.textContent = '提交中…';
 
             changePasswordRequest(oldp, newp).then(function (j) {
+                // 把 server 实际返回的对象打到 console，方便排查
+                try { console.log('[UNICODE] change-password response:', j); } catch (e) {}
                 var res = (j && j.Result) || j || {};
                 if (res.success) {
                     msg.style.color = '#43a047';
@@ -399,9 +418,13 @@
                     }, 2000);
                 } else {
                     msg.style.color = '#dc143c';
-                    msg.textContent = res.error || '修改失败';
+                    // 服务端会返回详细错误（比如指出账户不在 i_users / 密码哈希
+                    // 不匹配 / DB 连接失败）；fallback 时把原始 JSON 暴露给用户
+                    // 方便截图排查
+                    msg.textContent = res.error || ('修改失败（响应：' + JSON.stringify(j).slice(0, 200) + '）');
                 }
             }).catch(function (e) {
+                try { console.error('[UNICODE] change-password error:', e); } catch (_) {}
                 msg.style.color = '#dc143c';
                 msg.textContent = '请求失败：' + (e && e.message || e);
             });

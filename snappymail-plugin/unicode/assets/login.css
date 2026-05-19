@@ -1,21 +1,15 @@
 /*
  * UNICODE login page styling.
- * 设计原则：能用 CSS 改的不用 JS；只在 SnappyMail DOM 已经确定的元素上覆盖。
- * 颜色：主红 #dc143c，主黑 #1a1a1a，深红 #8b0000（悬停/强调）。
+ * 设计原则：让 SnappyMail 的当前主题（默认 Black Wood）的背景透出来，
+ * 我们只在 brand / banner / 关键按钮上叠红色强调。
+ * 颜色：主红 #dc143c，深红 #8b0000（悬停/强调）。
  */
 
-/* 登录页背景 —— 红黑渐变，浅一点的深红角落让画面不死板 */
-body.rl-login,
-#rl-app.rl-login {
-    background: radial-gradient(ellipse at 30% 20%, #2a0d13 0%, #0e0a0c 70%, #000 100%) fixed !important;
-    color: #e5e5e5;
-}
-
-/* 登录卡片：黑底 + 暗红边框 */
+/* 登录卡片：半透明深色 + 暗红边框，让 Black Wood 的木纹背景从四周透出 */
 #rl-app .b-login-form,
 #rl-app .login-form,
 #rl-app .card-login {
-    background: rgba(20, 18, 20, 0.92) !important;
+    background: rgba(20, 18, 20, 0.85) !important;
     border: 1px solid #4a0a14 !important;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(220, 20, 60, 0.08) !important;
     border-radius: 6px;
