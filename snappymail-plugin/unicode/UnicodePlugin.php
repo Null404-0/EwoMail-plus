@@ -30,12 +30,15 @@ class UnicodePlugin extends \RainLoop\Plugins\AbstractPlugin
     {
         // 同时加载 config.js（先）和 login.js（后）—— 顺序保证 login.js 读到
         // window.UNICODE_CFG。SnappyMail 按 add 顺序串到 <head>。
-        // 带版本参数避免浏览器/反向代理缓存旧 JS，导致仍调用已废弃的
-        // UnicodeChangePassword action（表现为 UnknownError[999]）。
-        $v = self::RELEASE;
-        $this->addCss('assets/login.css?v=' . $v);
-        $this->addJs('assets/config.js?v=' . $v);
-        $this->addJs('assets/login.js?v=' . $v);
+        //
+        // 注意：addCss/addJs 收的是【相对插件目录的文件名】，不是 URL。
+        // 加 ?v=... 这种 query string 会被当成文件名一部分去查磁盘 → 找不到
+        // → 整个 plugin asset 不挂到响应里 → 登录页 logo / 主题 / 密码菜单
+        // 全消失。缓存刷新走 update.sh 里的 touch + 删 cache 目录那套机制，
+        // 不要碰 addJs 的参数。
+        $this->addCss('assets/login.css');
+        $this->addJs('assets/config.js');
+        $this->addJs('assets/login.js');
 
         // 登录前的人机验证拦截。SnappyMail 不同版本里 login 钩子名略有差异，
         // 同时挂多个常见 hook 名提高兼容性 —— 任何一个先触发都能拒绝登录。
